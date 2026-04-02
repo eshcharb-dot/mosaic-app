@@ -1,15 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native'
 import { useRouter } from 'expo-router'
-import { MapPin, Clock, DollarSign, ChevronRight } from 'lucide-react-native'
+import { MapPin, Clock, ChevronRight } from 'lucide-react-native'
+import * as Location from 'expo-location'
 import { supabase } from '../../lib/supabase'
 import type { Task } from '@mosaic/types'
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function formatDist(km: number): string {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`
+}
+
+function distColor(km: number): string {
+  if (km < 2) return '#00e096'
+  if (km < 5) return '#ffd700'
+  return '#ff4d6d'
+}
 
 export default function TaskFeedScreen() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null)
   const router = useRouter()
+
+  // Request location silently — no blocker if denied
+  useEffect(() => {
+    ;(async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== 'granted') return
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+      setUserLoc({ lat: loc.coords.latitude, lng: loc.coords.longitude })
+    })()
+  }, [])
 
   async function loadTasks() {
     const { data } = await supabase
@@ -24,6 +54,18 @@ export default function TaskFeedScreen() {
   }
 
   useEffect(() => { loadTasks() }, [])
+
+  // Sort by distance when location is available
+  const sortedTasks = userLoc
+    ? [...tasks].sort((a, b) => {
+        const storeA = (a as any).stores
+        const storeB = (b as any).stores
+        if (!storeA?.lat || !storeB?.lat) return 0
+        const dA = haversineKm(userLoc.lat, userLoc.lng, storeA.lat, storeA.lng)
+        const dB = haversineKm(userLoc.lat, userLoc.lng, storeB.lat, storeB.lng)
+        return dA - dB
+      })
+    : tasks
 
   if (loading) return (
     <View style={s.center}><ActivityIndicator color="#7c6df5" size="large" /></View>
@@ -40,14 +82,14 @@ export default function TaskFeedScreen() {
         </View>
       </View>
 
-      {tasks.length === 0 ? (
+      {sortedTasks.length === 0 ? (
         <View style={s.center}>
           <Text style={s.emptyTitle}>No tasks nearby right now</Text>
           <Text style={s.emptyText}>Check back soon — new tasks appear every few minutes.</Text>
         </View>
       ) : (
         <FlatList
-          data={tasks}
+          data={sortedTasks}
           keyExtractor={t => t.id}
           contentContainerStyle={{ padding: 16, gap: 12 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks() }} tintColor="#7c6df5" />}
@@ -55,6 +97,9 @@ export default function TaskFeedScreen() {
             const store = (task as any).stores
             const campaign = (task as any).campaigns
             const payout = (task.payout_cents / 100).toFixed(2)
+            const dist = userLoc && store?.lat && store?.lng
+              ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
+              : null
             return (
               <TouchableOpacity style={s.card} onPress={() => router.push(`/task/${task.id}`)}>
                 <View style={s.cardTop}>
@@ -62,8 +107,15 @@ export default function TaskFeedScreen() {
                     <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
                     <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
                   </View>
-                  <View style={s.payoutBadge}>
-                    <Text style={s.payoutText}>£{payout}</Text>
+                  <View style={s.cardTopRight}>
+                    <View style={s.payoutBadge}>
+                      <Text style={s.payoutText}>£{payout}</Text>
+                    </View>
+                    {dist !== null && (
+                      <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
+                        <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
                 <View style={s.cardMeta}>
@@ -103,10 +155,13 @@ const s = StyleSheet.create({
   card: { backgroundColor: '#0c0c18', borderWidth: 1, borderColor: '#222240', borderRadius: 20, padding: 18, gap: 12 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   cardInfo: { flex: 1, marginRight: 12 },
+  cardTopRight: { alignItems: 'flex-end', gap: 6 },
   storeName: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 3 },
   productName: { fontSize: 14, color: '#b0b0d0' },
   payoutBadge: { backgroundColor: 'rgba(0,224,150,0.12)', borderWidth: 1, borderColor: 'rgba(0,224,150,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
   payoutText: { fontSize: 18, fontWeight: '900', color: '#00e096' },
+  distBadge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
+  distText: { fontSize: 12, fontWeight: '700' },
   cardMeta: { flexDirection: 'row', gap: 14 },
   metaItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   metaText: { fontSize: 13, color: '#b0b0d0' },

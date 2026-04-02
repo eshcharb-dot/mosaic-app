@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
+import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 
 interface Alert {
   id: string
@@ -21,9 +22,9 @@ interface Props {
 }
 
 const SEVERITY_CONFIG = {
-  critical: { label: 'Critical', bg: 'bg-[#ff4d6d]/10', border: 'border-[#ff4d6d]/30', text: 'text-[#ff4d6d]', dot: 'bg-[#ff4d6d]' },
-  warning:  { label: 'Warning',  bg: 'bg-[#ffc947]/10', border: 'border-[#ffc947]/30', text: 'text-[#ffc947]', dot: 'bg-[#ffc947]' },
-  info:     { label: 'Info',     bg: 'bg-[#00d4d4]/10', border: 'border-[#00d4d4]/30', text: 'text-[#00d4d4]', dot: 'bg-[#00d4d4]' },
+  critical: { label: 'Critical', bg: 'bg-[#ff4d6d]/10', border: 'border-[#ff4d6d]/30', text: 'text-[#ff4d6d]', dot: 'bg-[#ff4d6d]', hex: '#ff4d6d' },
+  warning:  { label: 'Warning',  bg: 'bg-[#ffc947]/10', border: 'border-[#ffc947]/30', text: 'text-[#ffc947]', dot: 'bg-[#ffc947]', hex: '#ffc947' },
+  info:     { label: 'Info',     bg: 'bg-[#00d4d4]/10', border: 'border-[#00d4d4]/30', text: 'text-[#00d4d4]', dot: 'bg-[#00d4d4]', hex: '#00d4d4' },
 }
 
 function timeAgo(iso: string) {
@@ -34,10 +35,90 @@ function timeAgo(iso: string) {
   }
 }
 
-export default function AlertsClient({ alerts }: Props) {
+// Toast banner for incoming realtime alerts
+interface ToastProps {
+  alert: Alert
+  onDismiss: () => void
+}
+function AlertToast({ alert, onDismiss }: ToastProps) {
+  const cfg = SEVERITY_CONFIG[alert.severity] ?? SEVERITY_CONFIG.info
+
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 5000)
+    return () => clearTimeout(t)
+  }, [onDismiss])
+
+  return (
+    <div
+      style={{
+        animation: 'mosaic-slidein 0.3s ease',
+        background: `${cfg.hex}14`,
+        border: `1px solid ${cfg.hex}40`,
+        borderRadius: 14,
+        padding: '12px 16px',
+        marginBottom: 8,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 12,
+      }}
+    >
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: '50%',
+          backgroundColor: cfg.hex,
+          flexShrink: 0,
+          marginTop: 4,
+          animation: 'mosaic-pulse 1.8s ease-in-out infinite',
+        }}
+      />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ color: cfg.hex, fontWeight: 700, fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          New alert: {alert.alert_name}
+        </span>
+        {alert.payload?.summary && (
+          <p style={{ color: '#b0b0d0', fontSize: 13, margin: '3px 0 0', lineHeight: 1.4 }}>
+            {alert.payload.summary}
+          </p>
+        )}
+      </div>
+      <button
+        onClick={onDismiss}
+        style={{ color: '#b0b0d0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 2px' }}
+        aria-label="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+export default function AlertsClient({ alerts: initialAlerts }: Props) {
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning'>('all')
 
-  const filtered = alerts.filter(a => {
+  // Realtime subscription
+  const { rows: liveRows, isConnected } = useRealtimeTable<Alert>('alert_events')
+  const [toasts, setToasts] = useState<Alert[]>([])
+  const prevLiveLen = useRef(0)
+
+  useEffect(() => {
+    const incoming = liveRows.length - prevLiveLen.current
+    if (incoming > 0) {
+      const newOnes = liveRows.slice(0, incoming)
+      setToasts(prev => [...newOnes, ...prev])
+    }
+    prevLiveLen.current = liveRows.length
+  }, [liveRows])
+
+  function dismissToast(id: string) {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }
+
+  // Merge live rows (prepend) into initial server-fetched alerts
+  const allAlerts: Alert[] = [...liveRows, ...initialAlerts]
+
+  const filtered = allAlerts.filter(a => {
     if (filter === 'all') return true
     return a.severity === filter
   })
@@ -48,23 +129,70 @@ export default function AlertsClient({ alerts }: Props) {
     { key: 'warning', label: 'Warning' },
   ]
 
+  const criticalCount = allAlerts.filter(a => a.severity === 'critical').length
+
   return (
     <div className="p-8 max-w-4xl">
+      {/* Keyframes */}
+      <style>{`
+        @keyframes mosaic-pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+        @keyframes mosaic-slidein {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">Alerts</h1>
           <p className="text-[#b0b0d0] mt-1">Compliance violations and system notifications</p>
         </div>
-        {alerts.length > 0 && (
-          <div className="flex items-center gap-2 bg-[#ff4d6d]/10 border border-[#ff4d6d]/25 rounded-full px-4 py-2">
-            <span className="w-2 h-2 rounded-full bg-[#ff4d6d] animate-pulse" />
-            <span className="text-[#ff4d6d] text-sm font-bold">
-              {alerts.filter(a => a.severity === 'critical').length} Critical
-            </span>
+        <div className="flex items-center gap-3">
+          {/* Connection status */}
+          <div
+            className={`flex items-center gap-2 rounded-full px-3 py-1.5 border text-xs font-bold ${
+              isConnected
+                ? 'bg-[#00e096]/10 border-[#00e096]/25 text-[#00e096]'
+                : 'bg-[#555577]/10 border-[#555577]/25 text-[#b0b0d0]'
+            }`}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: isConnected ? '#00e096' : '#555577',
+                flexShrink: 0,
+                animation: isConnected ? 'mosaic-pulse 1.8s ease-in-out infinite' : 'none',
+                display: 'inline-block',
+              }}
+            />
+            {isConnected ? 'Live' : 'Reconnecting…'}
           </div>
-        )}
+
+          {criticalCount > 0 && (
+            <div className="flex items-center gap-2 bg-[#ff4d6d]/10 border border-[#ff4d6d]/25 rounded-full px-4 py-2">
+              <span className="w-2 h-2 rounded-full bg-[#ff4d6d] animate-pulse" />
+              <span className="text-[#ff4d6d] text-sm font-bold">
+                {criticalCount} Critical
+              </span>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Toast banners for incoming realtime alerts */}
+      {toasts.length > 0 && (
+        <div className="mb-5">
+          {toasts.map(t => (
+            <AlertToast key={t.id} alert={t} onDismiss={() => dismissToast(t.id)} />
+          ))}
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex gap-2 mb-6">
@@ -81,7 +209,7 @@ export default function AlertsClient({ alerts }: Props) {
             {f.label}
             {f.key !== 'all' && (
               <span className="ml-2 text-xs opacity-60">
-                {alerts.filter(a => a.severity === f.key).length}
+                {allAlerts.filter(a => a.severity === f.key).length}
               </span>
             )}
           </button>

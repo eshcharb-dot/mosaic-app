@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
 import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
@@ -62,6 +63,14 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
 
   const router = useRouter()
   const supabase = createClient()
+
+  // Realtime submissions for this campaign
+  const { rows: liveSubmissions } = useRealtimeTable<{ id: string }>(
+    'submissions',
+    `campaign_id=eq.${campaign.id}`
+  )
+  // liveSubmissions only contains rows that arrived after mount; count them as new
+  const newSubmissionsCount = liveSubmissions.length
 
   // Stats
   const totalStores = campaignStores.length
@@ -219,6 +228,27 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           >
             <Icon size={15} />
             {label}
+            {/* Live submissions badge on the Submissions tab */}
+            {key === 'submissions' && newSubmissionsCount > 0 && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minWidth: 18,
+                  height: 18,
+                  borderRadius: 999,
+                  background: '#7c6df530',
+                  border: '1px solid #7c6df560',
+                  color: '#a89cf7',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '0 5px',
+                }}
+              >
+                +{newSubmissionsCount}
+              </span>
+            )}
           </button>
         ))}
       </div>

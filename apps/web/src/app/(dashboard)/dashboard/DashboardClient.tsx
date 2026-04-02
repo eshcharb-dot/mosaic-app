@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useRef, useState } from 'react'
 import { TrendingUp, Store, CheckCircle, AlertTriangle, Clock, BarChart3, MapPin } from 'lucide-react'
 import {
   LineChart,
@@ -10,6 +11,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { format, parseISO } from 'date-fns'
+import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 
 interface TrendPoint {
   date: string
@@ -131,9 +133,48 @@ function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
   )
 }
 
+// Pulsing live dot
+function LiveDot({ connected }: { connected: boolean }) {
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        width: 8,
+        height: 8,
+        borderRadius: '50%',
+        backgroundColor: connected ? '#00e096' : '#555577',
+        animation: connected ? 'mosaic-pulse 1.8s ease-in-out infinite' : 'none',
+        flexShrink: 0,
+      }}
+    />
+  )
+}
+
 export default function DashboardClient({ campaigns, submissions, trend, mapData }: Props) {
-  const totalSubmissions = submissions.length
-  const compliant = submissions.filter(s => s.compliance_results?.[0]?.is_compliant).length
+  // Realtime new submissions
+  const { rows: liveSubmissions, isConnected } = useRealtimeTable<any>('submissions')
+  const [liveCount, setLiveCount] = useState(0)
+  const [showNewBadge, setShowNewBadge] = useState(false)
+  const badgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Track previous liveSubmissions length to detect genuinely new rows
+  const prevLiveLen = useRef(0)
+  useEffect(() => {
+    const incoming = liveSubmissions.length - prevLiveLen.current
+    if (incoming > 0) {
+      setLiveCount(c => c + incoming)
+      setShowNewBadge(true)
+      if (badgeTimerRef.current) clearTimeout(badgeTimerRef.current)
+      badgeTimerRef.current = setTimeout(() => setShowNewBadge(false), 3000)
+    }
+    prevLiveLen.current = liveSubmissions.length
+  }, [liveSubmissions])
+
+  // Merge live submissions (prepend) into the static list, cap at 20
+  const mergedSubmissions = [...liveSubmissions, ...submissions].slice(0, 20)
+
+  const totalSubmissions = mergedSubmissions.length
+  const compliant = mergedSubmissions.filter(s => s.compliance_results?.[0]?.is_compliant).length
   const score = totalSubmissions > 0 ? Math.round((compliant / totalSubmissions) * 100) : 0
 
   const stats = [
@@ -283,9 +324,46 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
 
         {/* Recent activity */}
         <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-white mb-5">Recent Submissions</h2>
+          {/* Inject pulse keyframes once */}
+          <style>{`
+            @keyframes mosaic-pulse {
+              0%, 100% { opacity: 1; }
+              50% { opacity: 0.3; }
+            }
+            @keyframes mosaic-fadein {
+              from { opacity: 0; transform: translateY(-4px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
+
+          <div className="flex items-center gap-2 mb-5 flex-wrap">
+            <h2 className="text-lg font-bold text-white">Recent Submissions</h2>
+            {/* Live indicator dot */}
+            <div className="flex items-center gap-1.5 bg-[#00e096]/10 border border-[#00e096]/25 rounded-full px-2.5 py-1">
+              <LiveDot connected={isConnected} />
+              <span className="text-[#00e096] text-xs font-bold">LIVE</span>
+            </div>
+            {/* "+n new" flash badge */}
+            {showNewBadge && (
+              <span
+                style={{
+                  animation: 'mosaic-fadein 0.25s ease',
+                  background: '#7c6df520',
+                  border: '1px solid #7c6df550',
+                  borderRadius: 999,
+                  padding: '2px 10px',
+                  color: '#a89cf7',
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                +{liveCount} new
+              </span>
+            )}
+          </div>
+
           <div className="space-y-3">
-            {submissions.slice(0, 8).map((s: any) => {
+            {mergedSubmissions.slice(0, 8).map((s: any) => {
               const result = s.compliance_results?.[0]
               return (
                 <div key={s.id} className="flex items-center gap-3 p-3 bg-[#030305] rounded-xl border border-[#222240]">
@@ -302,7 +380,7 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
                 </div>
               )
             })}
-            {submissions.length === 0 && (
+            {mergedSubmissions.length === 0 && (
               <p className="text-[#b0b0d0] text-sm text-center py-8">No submissions yet</p>
             )}
           </div>

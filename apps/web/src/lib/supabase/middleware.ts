@@ -23,16 +23,26 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith('/login') ||
+  const isLoginSignupRoute = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/signup')
+  const isOnboardingRoute = request.nextUrl.pathname.startsWith('/onboarding')
 
-  if (!user && !isAuthRoute) {
+  // Unauthenticated: block everything except login/signup/onboarding
+  if (!user && !isLoginSignupRoute && !isOnboardingRoute) {
     return NextResponse.redirect(new URL('/login', request.url))
   }
 
-  if (user && isAuthRoute) {
+  // Unauthenticated hitting /onboarding → redirect to login
+  if (!user && isOnboardingRoute) {
+    return NextResponse.redirect(new URL('/login', request.url))
+  }
+
+  // Authenticated hitting login/signup → send to dashboard
+  if (user && isLoginSignupRoute) {
     return NextResponse.redirect(new URL('/dashboard', request.url))
   }
+
+  // Authenticated hitting /onboarding: let the page component handle org check + redirect
 
   return supabaseResponse
 }
