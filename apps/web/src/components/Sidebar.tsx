@@ -5,10 +5,10 @@ import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 const nav = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/campaigns', label: 'Campaigns', icon: Megaphone },
-  { href: '/gallery', label: 'Gallery', icon: Image },
-  { href: '/alerts', label: 'Alerts', icon: Bell },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
+  { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: null },
+  { href: '/gallery', label: 'Gallery', icon: Image, badge: null },
+  { href: '/alerts', label: 'Alerts', icon: Bell, badge: 3 },
 ]
 
 export default function Sidebar({ user }: { user: any }) {
@@ -36,7 +36,7 @@ export default function Sidebar({ user }: { user: any }) {
 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {nav.map(({ href, label, icon: Icon, badge }) => {
           const active = pathname === href || pathname.startsWith(href + '/')
           return (
             <a key={href} href={href}
@@ -46,7 +46,12 @@ export default function Sidebar({ user }: { user: any }) {
                   : 'text-[#b0b0d0] hover:text-white hover:bg-white/5'
               }`}>
               <Icon size={18} />
-              {label}
+              <span className="flex-1">{label}</span>
+              {badge != null && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ff4d6d] px-1.5 text-[10px] font-bold text-white leading-none">
+                  {badge}
+                </span>
+              )}
             </a>
           )
         })}

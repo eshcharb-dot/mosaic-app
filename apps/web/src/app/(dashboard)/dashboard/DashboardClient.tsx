@@ -1,12 +1,137 @@
 'use client'
-import { TrendingUp, Store, CheckCircle, AlertTriangle, Clock, BarChart3 } from 'lucide-react'
+import { TrendingUp, Store, CheckCircle, AlertTriangle, Clock, BarChart3, MapPin } from 'lucide-react'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
+import { format, parseISO } from 'date-fns'
+
+interface TrendPoint {
+  date: string
+  total: number
+  compliant: number
+  avg_score: number
+}
+
+interface StoreMapPoint {
+  store_id: string
+  store_name: string
+  lat: number
+  lng: number
+  latest_score: number | null
+  is_compliant: boolean | null
+  submission_count: number
+}
 
 interface Props {
   campaigns: any[]
   submissions: any[]
+  trend: TrendPoint[]
+  mapData: StoreMapPoint[]
 }
 
-export default function DashboardClient({ campaigns, submissions }: Props) {
+// Custom tooltip for the line chart
+function ChartTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  const d = payload[0]?.payload as TrendPoint
+  return (
+    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[#b0b0d0] mb-1">{label}</div>
+      <div className="text-white font-bold text-sm">{Math.round(d?.avg_score ?? 0)}% avg score</div>
+      <div className="text-[#7c6df5]">{d?.compliant ?? 0} / {d?.total ?? 0} compliant</div>
+    </div>
+  )
+}
+
+// SVG Store Map — positions dots from lat/lng normalized to bounding box
+function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
+  const W = 800
+  const H = 340
+  const PAD = 32
+
+  const lats = stores.map(s => s.lat).filter(Boolean)
+  const lngs = stores.map(s => s.lng).filter(Boolean)
+
+  // London fallback bounding box
+  const minLat = lats.length ? Math.min(...lats) : 51.3
+  const maxLat = lats.length ? Math.max(...lats) : 51.7
+  const minLng = lngs.length ? Math.min(...lngs) : -0.35
+  const maxLng = lngs.length ? Math.max(...lngs) : 0.15
+
+  const latRange = maxLat - minLat || 0.4
+  const lngRange = maxLng - minLng || 0.5
+
+  function project(lat: number, lng: number) {
+    const x = PAD + ((lng - minLng) / lngRange) * (W - PAD * 2)
+    // latitude increases upward, SVG y increases downward
+    const y = PAD + ((maxLat - lat) / latRange) * (H - PAD * 2)
+    return { x, y }
+  }
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      className="w-full rounded-xl"
+      style={{ background: '#030305', border: '1px solid #222240' }}
+    >
+      {/* Grid lines */}
+      {[0.25, 0.5, 0.75].map(f => (
+        <g key={f}>
+          <line
+            x1={PAD} y1={PAD + f * (H - PAD * 2)}
+            x2={W - PAD} y2={PAD + f * (H - PAD * 2)}
+            stroke="#222240" strokeWidth="1"
+          />
+          <line
+            x1={PAD + f * (W - PAD * 2)} y1={PAD}
+            x2={PAD + f * (W - PAD * 2)} y2={H - PAD}
+            stroke="#222240" strokeWidth="1"
+          />
+        </g>
+      ))}
+
+      {/* Store dots */}
+      {stores.map(s => {
+        const { x, y } = project(s.lat, s.lng)
+        const color = s.is_compliant === null ? '#b0b0d0'
+          : s.is_compliant ? '#00e096'
+          : '#ff4d6d'
+        const score = s.latest_score != null ? `${Math.round(s.latest_score)}%` : 'No data'
+        return (
+          <g key={s.store_id}>
+            {/* Glow ring */}
+            <circle cx={x} cy={y} r={9} fill={color} opacity={0.15} />
+            <circle cx={x} cy={y} r={5} fill={color} opacity={0.85}>
+              <title>{s.store_name} — {score}</title>
+            </circle>
+          </g>
+        )
+      })}
+
+      {/* Legend */}
+      <g transform={`translate(${W - PAD - 130}, ${H - PAD - 10})`}>
+        <circle cx={6} cy={0} r={5} fill="#00e096" opacity={0.85} />
+        <text x={14} y={4} fill="#b0b0d0" fontSize={11}>Compliant</text>
+        <circle cx={80} cy={0} r={5} fill="#ff4d6d" opacity={0.85} />
+        <text x={88} y={4} fill="#b0b0d0" fontSize={11}>Non-compliant</text>
+      </g>
+
+      {/* Empty state */}
+      {stores.length === 0 && (
+        <text x={W / 2} y={H / 2} textAnchor="middle" fill="#b0b0d0" fontSize={14}>
+          No store location data available
+        </text>
+      )}
+    </svg>
+  )
+}
+
+export default function DashboardClient({ campaigns, submissions, trend, mapData }: Props) {
   const totalSubmissions = submissions.length
   const compliant = submissions.filter(s => s.compliance_results?.[0]?.is_compliant).length
   const score = totalSubmissions > 0 ? Math.round((compliant / totalSubmissions) * 100) : 0
@@ -17,6 +142,16 @@ export default function DashboardClient({ campaigns, submissions }: Props) {
     { label: 'Active Campaigns', value: campaigns.length.toString(), delta: '', icon: BarChart3, color: '#00d4d4' },
     { label: 'Avg Delivery', value: '28 min', delta: 'vs 30 min SLA', icon: Clock, color: '#ffc947' },
   ]
+
+  // Format trend data for Recharts
+  const chartData = trend.map(t => ({
+    ...t,
+    dateLabel: (() => {
+      try { return format(parseISO(t.date), 'MMM d') }
+      catch { return t.date }
+    })(),
+    compliancePct: t.total > 0 ? Math.round((t.compliant / t.total) * 100) : 0,
+  }))
 
   return (
     <div className="p-8">
@@ -46,7 +181,76 @@ export default function DashboardClient({ campaigns, submissions }: Props) {
         ))}
       </div>
 
-      {/* Active campaigns */}
+      {/* Compliance Trend Chart */}
+      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 mb-5">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-lg font-bold text-white">Compliance Trend</h2>
+            <p className="text-[#b0b0d0] text-sm mt-0.5">Last 30 days — % of audits passing compliance</p>
+          </div>
+          <TrendingUp size={18} className="text-[#7c6df5]" />
+        </div>
+
+        {chartData.length === 0 ? (
+          <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">
+            No trend data available yet
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
+              <XAxis
+                dataKey="dateLabel"
+                tick={{ fill: '#b0b0d0', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                interval="preserveStartEnd"
+              />
+              <YAxis
+                domain={[0, 100]}
+                tick={{ fill: '#b0b0d0', fontSize: 11 }}
+                axisLine={false}
+                tickLine={false}
+                tickFormatter={(v) => `${v}%`}
+                width={38}
+              />
+              <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#7c6df5', strokeWidth: 1, strokeDasharray: '4 4' }} />
+              <Line
+                type="monotone"
+                dataKey="compliancePct"
+                stroke="#7c6df5"
+                strokeWidth={2.5}
+                dot={false}
+                activeDot={{ r: 5, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Store Coverage Map */}
+      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 mb-5">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-lg font-bold text-white">Store Coverage</h2>
+            <p className="text-[#b0b0d0] text-sm mt-0.5">Geographic distribution of audited stores</p>
+          </div>
+          <div className="flex items-center gap-4 text-xs text-[#b0b0d0]">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#00e096]" />
+              {mapData.filter(s => s.is_compliant).length} compliant
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#ff4d6d]" />
+              {mapData.filter(s => s.is_compliant === false).length} non-compliant
+            </span>
+            <MapPin size={14} className="text-[#7c6df5]" />
+          </div>
+        </div>
+        <StoreSvgMap stores={mapData} />
+      </div>
+
+      {/* Active campaigns + Recent activity */}
       <div className="grid grid-cols-3 gap-5">
         <div className="col-span-2 bg-[#0c0c18] border border-[#222240] rounded-2xl p-6">
           <h2 className="text-lg font-bold text-white mb-5">Active Campaigns</h2>
