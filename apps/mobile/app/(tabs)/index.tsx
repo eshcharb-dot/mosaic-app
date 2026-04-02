@@ -7,6 +7,15 @@ import { supabase } from '../../lib/supabase'
 import { getPendingSyncTaskIds } from '../../lib/offlineQueue'
 import type { Task } from '@mosaic/types'
 
+// SLA audit urgency: returns true if the store hasn't been audited within audit_frequency_days
+function isStoreOverdue(lastAuditIso: string | null | undefined, auditFrequencyDays: number | null | undefined): boolean {
+  if (!auditFrequencyDays) return false
+  if (!lastAuditIso) return true // never audited
+  const lastAudit = new Date(lastAuditIso).getTime()
+  const cutoff = Date.now() - auditFrequencyDays * 24 * 60 * 60 * 1000
+  return lastAudit < cutoff
+}
+
 // ── Tier helpers ──────────────────────────────────────────────────────────────
 
 const TIER_MULTIPLIERS: Record<string, number> = {
@@ -50,6 +59,10 @@ export default function TaskFeedScreen() {
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null)
   const [pendingSyncIds, setPendingSyncIds] = useState<Set<string>>(new Set())
   const [collectorTier, setCollectorTier] = useState<string | null>(null)
+  // SLA: map of campaign_id -> audit_frequency_days
+  const [slaAuditDays, setSlaAuditDays] = useState<Record<string, number>>({})
+  // SLA: map of store_id -> last_submission_at (ISO string)
+  const [storeLastAudit, setStoreLastAudit] = useState<Record<string, string | null>>({})
   const router = useRouter()
 
   // Request location silently — no blocker if denied
@@ -95,7 +108,8 @@ export default function TaskFeedScreen() {
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(30)
-    setTasks((data as any) ?? [])
+    const taskRows = (data as any) ?? []
+    setTasks(taskRows)
 
     // Refresh pending-sync badge set alongside task data
     try {
@@ -103,6 +117,37 @@ export default function TaskFeedScreen() {
       setPendingSyncIds(new Set(ids))
     } catch {
       // ignore
+    }
+
+    // Fetch SLA audit frequency for each unique campaign
+    const campaignIds: string[] = [...new Set(taskRows.map((t: any) => t.campaign_id).filter(Boolean))]
+    if (campaignIds.length > 0) {
+      const { data: slaRows } = await supabase
+        .from('campaign_slas')
+        .select('campaign_id, audit_frequency_days')
+        .in('campaign_id', campaignIds)
+      if (slaRows) {
+        const map: Record<string, number> = {}
+        slaRows.forEach((r: any) => { map[r.campaign_id] = r.audit_frequency_days })
+        setSlaAuditDays(map)
+      }
+    }
+
+    // Fetch last submission per store (for overdue computation)
+    const storeIds: string[] = [...new Set(taskRows.map((t: any) => t.store_id).filter(Boolean))]
+    if (storeIds.length > 0) {
+      const { data: subRows } = await supabase
+        .from('submissions')
+        .select('store_id, submitted_at')
+        .in('store_id', storeIds)
+        .order('submitted_at', { ascending: false })
+      if (subRows) {
+        const map: Record<string, string | null> = {}
+        subRows.forEach((r: any) => {
+          if (!map[r.store_id]) map[r.store_id] = r.submitted_at
+        })
+        setStoreLastAudit(map)
+      }
     }
 
     setLoading(false)
@@ -169,12 +214,20 @@ export default function TaskFeedScreen() {
               : null
             const isPendingSync = pendingSyncIds.has(task.id)
             const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
+            const auditFreqDays = (task as any).campaign_id ? slaAuditDays[(task as any).campaign_id] : null
+            const lastAudit = (task as any).store_id ? storeLastAudit[(task as any).store_id] : null
+            const isUrgent = isStoreOverdue(lastAudit, auditFreqDays)
             return (
-              <TouchableOpacity style={s.card} onPress={() => router.push(`/task/${task.id}`)}>
+              <TouchableOpacity style={[s.card, isUrgent && s.cardUrgent]} onPress={() => router.push(`/task/${task.id}`)}>
                 <View style={s.cardTop}>
                   <View style={s.cardInfo}>
                     <View style={s.storeNameRow}>
                       <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
+                      {isUrgent && (
+                        <View style={s.urgentBadge}>
+                          <Text style={s.urgentBadgeText}>URGENT</Text>
+                        </View>
+                      )}
                       {isPendingSync && (
                         <View style={s.offlineBadge}>
                           <Text style={s.offlineBadgeText}>Offline</Text>
@@ -253,6 +306,9 @@ const s = StyleSheet.create({
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00e096' },
   liveText: { fontSize: 11, fontWeight: '700', color: '#00e096' },
   card: { backgroundColor: '#0c0c18', borderWidth: 1, borderColor: '#222240', borderRadius: 20, padding: 18, gap: 12 },
+  cardUrgent: { borderColor: 'rgba(255,201,71,0.45)', backgroundColor: 'rgba(255,201,71,0.03)' },
+  urgentBadge: { backgroundColor: 'rgba(255,201,71,0.15)', borderWidth: 1, borderColor: 'rgba(255,201,71,0.45)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  urgentBadgeText: { fontSize: 10, fontWeight: '800', color: '#ffc947', letterSpacing: 0.5 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   cardInfo: { flex: 1, marginRight: 12 },
   cardTopRight: { alignItems: 'flex-end', gap: 6 },

@@ -9,7 +9,7 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native'
-import { TrendingUp, Settings } from 'lucide-react-native'
+import { TrendingUp, Settings, Gift } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 
@@ -110,7 +110,6 @@ function rankMedal(percentile: number): string {
 }
 
 function RankingCard({ myRank }: { myRank: MyRank | null | undefined }) {
-  // undefined = still loading, null = no rank yet
   if (myRank === undefined) return null
 
   return (
@@ -138,6 +137,36 @@ function RankingCard({ myRank }: { myRank: MyRank | null | undefined }) {
   )
 }
 
+// ── Referral bonus card ───────────────────────────────────────────────────────
+
+function ReferralBonusCard({
+  bonusCents,
+  referralCount,
+}: {
+  bonusCents: number
+  referralCount: number
+}) {
+  if (bonusCents <= 0) return null
+  const pounds = (bonusCents / 100).toFixed(2)
+
+  return (
+    <View style={rb.card}>
+      <View style={rb.row}>
+        <View style={rb.iconWrap}>
+          <Gift size={16} color="#7c6df5" />
+        </View>
+        <View style={rb.info}>
+          <Text style={rb.label}>Referral Bonuses</Text>
+          <Text style={rb.sub}>
+            £{pounds} from {referralCount} referral{referralCount !== 1 ? 's' : ''}
+          </Text>
+        </View>
+        <Text style={rb.amount}>£{pounds}</Text>
+      </View>
+    </View>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function EarningsScreen() {
@@ -145,13 +174,13 @@ export default function EarningsScreen() {
 
   const [earnings, setEarnings] = useState<Earnings | null>(null)
   const [history, setHistory] = useState<TaskHistoryItem[]>([])
-  const [myRank, setMyRank] = useState<MyRank | null | undefined>(undefined) // undefined = loading
+  const [myRank, setMyRank] = useState<MyRank | null | undefined>(undefined)
   const [collectorTier, setCollectorTier] = useState<string | null>(null)
+  const [referralBonusCents, setReferralBonusCents] = useState(0)
+  const [referralCount, setReferralCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [payoutLoading, setPayoutLoading] = useState(false)
-
-  // ── Data fetching ────────────────────────────────────────────────────────────
 
   const loadData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -165,24 +194,38 @@ export default function EarningsScreen() {
       supabase.rpc('get_collector_earnings', { collector_id: user.id }),
       supabase.rpc('get_collector_task_history', { collector_id: user.id, limit_n: 20 }),
       supabase.rpc('get_my_rank', { p_collector_id: user.id }),
-      supabase.from('profiles').select('collector_tier').eq('id', user.id).single(),
+      supabase
+        .from('profiles')
+        .select('collector_tier, referral_bonus_earned_cents')
+        .eq('id', user.id)
+        .single(),
     ])
 
     setEarnings(
       earningsRes.data ?? { total_earned: 0, pending_payout: 0, this_week_earned: 0 }
     )
     setHistory(historyRes.data ?? [])
-    // get_my_rank returns an array of rows; first row is the result
     const rankRow = Array.isArray(rankRes.data) ? rankRes.data[0] : rankRes.data
     setMyRank(rankRow ?? null)
     setCollectorTier(profileRes.data?.collector_tier ?? null)
+    setReferralBonusCents(profileRes.data?.referral_bonus_earned_cents ?? 0)
+
+    // Count distinct referees who triggered a bonus event
+    const { data: refEvents } = await supabase
+      .from('referral_events')
+      .select('referee_id')
+      .eq('referrer_id', user.id)
+      .in('event_type', ['first_task', 'tenth_task'])
+    if (refEvents) {
+      const unique = new Set(refEvents.map((e: any) => e.referee_id))
+      setReferralCount(unique.size)
+    }
+
     setLoading(false)
     setRefreshing(false)
   }, [])
 
   useEffect(() => { loadData() }, [loadData])
-
-  // ── Payout ────────────────────────────────────────────────────────────────────
 
   async function handleWithdraw() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -200,21 +243,15 @@ export default function EarningsScreen() {
     }
   }
 
-  // ── Derived values ────────────────────────────────────────────────────────────
-
   const totalEarned = earnings?.total_earned ?? 0
   const pending = earnings?.pending_payout ?? 0
   const thisWeek = earnings?.this_week_earned ?? 0
   const canWithdraw = pending >= 5
 
-  // ── Helpers ───────────────────────────────────────────────────────────────────
-
   function formatDate(iso?: string): string {
     if (!iso) return ''
     return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
   }
-
-  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
     <View style={s.container}>
@@ -255,7 +292,6 @@ export default function EarningsScreen() {
                 <Text style={s.heroLabel}>TOTAL EARNED</Text>
                 <Text style={s.heroAmount}>£{totalEarned.toFixed(2)}</Text>
 
-                {/* Sub-stats */}
                 <View style={s.subStats}>
                   <View style={s.subStat}>
                     <Text style={s.subStatLabel}>Pending</Text>
@@ -268,7 +304,6 @@ export default function EarningsScreen() {
                   </View>
                 </View>
 
-                {/* Withdraw button */}
                 {canWithdraw ? (
                   <TouchableOpacity
                     style={[s.withdrawBtn, payoutLoading && s.withdrawBtnDisabled]}
@@ -287,6 +322,12 @@ export default function EarningsScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Referral bonus row */}
+              <ReferralBonusCard
+                bonusCents={referralBonusCents}
+                referralCount={referralCount}
+              />
 
               {/* Ranking card */}
               <RankingCard myRank={myRank} />
@@ -455,4 +496,33 @@ const r = StyleSheet.create({
   rankDetail: { fontSize: 14, color: '#b0b0d0', fontWeight: '600' },
   unrankedTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
   unrankedSub: { fontSize: 13, color: '#b0b0d0', textAlign: 'center' },
+})
+
+const rb = StyleSheet.create({
+  card: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#0c0c18',
+    borderWidth: 1,
+    borderColor: 'rgba(124,109,245,0.25)',
+    borderRadius: 18,
+    padding: 16,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(124,109,245,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  info: { flex: 1, gap: 2 },
+  label: { fontSize: 14, fontWeight: '700', color: '#ffffff' },
+  sub: { fontSize: 12, color: '#b0b0d0' },
+  amount: { fontSize: 18, fontWeight: '900', color: '#7c6df5' },
 })

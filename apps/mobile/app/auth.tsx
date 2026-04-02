@@ -12,7 +12,10 @@ import {
   Alert,
 } from 'react-native'
 import { useRouter } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
+
+const REFERRAL_CODE_KEY = 'mosaic_pending_referral_code'
 
 type Mode = 'login' | 'signup'
 
@@ -43,7 +46,7 @@ export default function AuthScreen() {
         return
       }
     } else {
-      const { error: authError } = await supabase.auth.signUp({
+      const { data: signUpData, error: authError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
@@ -55,6 +58,41 @@ export default function AuthScreen() {
         setLoading(false)
         return
       }
+
+      // Handle pending referral code
+      const newUserId = signUpData?.user?.id
+      if (newUserId) {
+        try {
+          const pendingCode = await AsyncStorage.getItem(REFERRAL_CODE_KEY)
+          if (pendingCode) {
+            // Find the referrer's profile by code
+            const { data: referrerProfile } = await supabase
+              .from('profiles')
+              .select('id')
+              .eq('referral_code', pendingCode)
+              .maybeSingle()
+
+            if (referrerProfile?.id && referrerProfile.id !== newUserId) {
+              // Set referred_by on the new profile
+              await supabase
+                .from('profiles')
+                .update({ referred_by: referrerProfile.id })
+                .eq('id', newUserId)
+
+              // Record the signup referral event (0 bonus, but tracked)
+              await supabase.rpc('process_referral_bonus', {
+                p_referee_id: newUserId,
+                p_event_type: 'signup',
+              })
+            }
+
+            await AsyncStorage.removeItem(REFERRAL_CODE_KEY)
+          }
+        } catch {
+          // Referral attribution is best-effort — don't block signup
+        }
+      }
+
       Alert.alert(
         'Check your email',
         'We sent you a confirmation link. Please verify your email before signing in.',

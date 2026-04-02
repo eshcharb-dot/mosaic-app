@@ -144,6 +144,31 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
+  // SLA config state
+  const slaRef = useRef<HTMLDivElement>(null)
+  const [slaConfig, setSlaConfig] = useState<{
+    min_compliance_score: number
+    audit_frequency_days: number
+    response_time_hours: number
+    target_compliant_pct: number
+  } | null>(null)
+  const [slaStatus, setSlaStatus] = useState<{
+    sla: Record<string, unknown>
+    overdue_stores: number
+    current_compliant_pct: number | null
+    total_stores: number
+    open_breaches: number
+    is_meeting_sla: boolean | null
+  } | null>(null)
+  const [slaLoading, setSlaLoading] = useState(false)
+  const [slaSaving, setSlaSaving] = useState(false)
+  const [slaSaveResult, setSlaSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  // Local SLA form values
+  const [slaMinScore, setSlaMinScore] = useState(70)
+  const [slaAuditDays, setSlaAuditDays] = useState(30)
+  const [slaResponseHours, setSlaResponseHours] = useState(24)
+  const [slaTargetPct, setSlaTargetPct] = useState(90)
+
   // Compliance rules state
   const [rules, setRules] = useState<ComplianceRule[]>([])
   const [rulesLoading, setRulesLoading] = useState(false)
@@ -168,6 +193,66 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
       }
     } finally {
       setRulesLoading(false)
+    }
+  }
+
+  async function fetchSlaConfig() {
+    setSlaLoading(true)
+    try {
+      const [cfgRes, statusRes] = await Promise.all([
+        fetch(`/api/campaigns/${campaign.id}/sla`),
+        fetch(`/api/campaigns/${campaign.id}/sla/status`),
+      ])
+      if (cfgRes.ok) {
+        const json = await cfgRes.json()
+        if (json.sla) {
+          setSlaConfig(json.sla)
+          setSlaMinScore(json.sla.min_compliance_score ?? 70)
+          setSlaAuditDays(json.sla.audit_frequency_days ?? 30)
+          setSlaResponseHours(json.sla.response_time_hours ?? 24)
+          setSlaTargetPct(json.sla.target_compliant_pct ?? 90)
+        }
+      }
+      if (statusRes.ok) {
+        const json = await statusRes.json()
+        if (json.status) setSlaStatus(json.status)
+      }
+    } finally {
+      setSlaLoading(false)
+    }
+  }
+
+  async function handleSaveSla() {
+    setSlaSaving(true)
+    setSlaSaveResult(null)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/sla`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          min_compliance_score: slaMinScore,
+          audit_frequency_days: slaAuditDays,
+          response_time_hours: slaResponseHours,
+          target_compliant_pct: slaTargetPct,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSlaSaveResult({ ok: false, msg: json.error ?? 'Failed to save SLA' })
+      } else {
+        setSlaConfig(json.sla)
+        setSlaSaveResult({ ok: true, msg: 'SLA configuration saved' })
+        // Refresh status
+        const statusRes = await fetch(`/api/campaigns/${campaign.id}/sla/status`)
+        if (statusRes.ok) {
+          const statusJson = await statusRes.json()
+          if (statusJson.status) setSlaStatus(statusJson.status)
+        }
+      }
+    } catch {
+      setSlaSaveResult({ ok: false, msg: 'Network error — please try again' })
+    } finally {
+      setSlaSaving(false)
     }
   }
 
@@ -269,12 +354,24 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     setStoreBulkResult(null)
   }
 
-  // Tab change clears selection; fetch rules when settings tab opens
+  // Tab change clears selection; fetch rules + SLA when settings tab opens
   useEffect(() => {
     clearStoreSelection()
-    if (activeTab === 'settings') fetchRules()
+    if (activeTab === 'settings') {
+      fetchRules()
+      fetchSlaConfig()
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
+
+  // Also fetch SLA status on mount for the header badge
+  useEffect(() => {
+    fetch(`/api/campaigns/${campaign.id}/sla/status`)
+      .then(r => r.ok ? r.json() : null)
+      .then(json => { if (json?.status) setSlaStatus(json.status) })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Escape clears store selection when in stores tab
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -569,6 +666,48 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           </div>
         )}
       </div>
+
+      {/* SLA status badge */}
+      {slaStatus && (
+        <div className="mb-5">
+          {(() => {
+            const pct = slaStatus.current_compliant_pct ?? 0
+            const target = (slaStatus.sla as any)?.target_compliant_pct ?? 90
+            const overdue = slaStatus.overdue_stores ?? 0
+            const isMet = slaStatus.is_meeting_sla === true
+            const isAtRisk = !isMet && pct >= target - 5
+            const isBreached = !isMet && pct < target - 5
+
+            const color = isMet ? '#00e096' : isAtRisk ? '#ffc947' : '#ff4d6d'
+            const label = isMet ? 'SLA: MET \u2713' : isAtRisk ? 'SLA: AT RISK \u26a0' : 'SLA: BREACHED \u2717'
+
+            return (
+              <div className="flex items-center gap-3 flex-wrap">
+                <button
+                  onClick={() => {
+                    setActiveTab('settings')
+                    setTimeout(() => slaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-bold transition-colors hover:opacity-80"
+                  style={{ background: `${color}12`, border: `1px solid ${color}40`, color }}
+                >
+                  {label}
+                </button>
+                {overdue > 0 && (
+                  <span className="text-xs text-[#ffc947] font-semibold">
+                    {overdue} store{overdue !== 1 ? 's' : ''} overdue for audit
+                  </span>
+                )}
+                {slaStatus.open_breaches > 0 && (
+                  <span className="text-xs text-[#ff4d6d] font-semibold">
+                    {slaStatus.open_breaches} open breach{slaStatus.open_breaches !== 1 ? 'es' : ''}
+                  </span>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      )}
 
       {/* Stats bar */}
       <div className="grid grid-cols-4 gap-4 mb-7">
@@ -1096,6 +1235,117 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                 </button>
               </div>
             </div>
+          </div>
+
+          {/* SLA Configuration card */}
+          <div ref={slaRef} className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-5">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-[#ffc947]/15 border border-[#ffc947]/30 flex items-center justify-center">
+                <Clock size={15} className="text-[#ffc947]" />
+              </div>
+              <div>
+                <h2 className="font-bold text-white text-lg">SLA Configuration</h2>
+                <p className="text-xs text-[#b0b0d0]">Set compliance targets and audit cadence for this campaign</p>
+              </div>
+              {slaConfig && (
+                <span className="ml-auto text-xs text-[#b0b0d0]">Last updated {new Date((slaConfig as any).updated_at ?? '').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+              )}
+            </div>
+
+            {slaLoading ? (
+              <div className="text-sm text-[#b0b0d0] py-4 text-center">Loading SLA config…</div>
+            ) : (
+              <div className="space-y-6">
+                {/* Min compliance score */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Min Compliance Score</label>
+                    <span className="text-xs font-bold text-white">Fail below {slaMinScore}/100</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    value={slaMinScore}
+                    onChange={e => setSlaMinScore(Number(e.target.value))}
+                    className="w-full accent-[#ffc947]"
+                  />
+                  <div className="flex justify-between text-xs text-[#b0b0d0] mt-1">
+                    <span>50</span>
+                    <span>75</span>
+                    <span>100</span>
+                  </div>
+                </div>
+
+                {/* Target compliant % */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Target Compliant Stores</label>
+                    <span className="text-xs font-bold text-white">{slaTargetPct}% of stores must be compliant</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={50}
+                    max={100}
+                    value={slaTargetPct}
+                    onChange={e => setSlaTargetPct(Number(e.target.value))}
+                    className="w-full accent-[#00d4d4]"
+                  />
+                  <div className="flex justify-between text-xs text-[#b0b0d0] mt-1">
+                    <span>50%</span>
+                    <span>75%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Audit frequency */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Audit Frequency</label>
+                    <select
+                      value={slaAuditDays}
+                      onChange={e => setSlaAuditDays(Number(e.target.value))}
+                      className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
+                    >
+                      <option value={7}>Every 7 days</option>
+                      <option value={14}>Every 14 days</option>
+                      <option value={30}>Every 30 days</option>
+                      <option value={90}>Every 90 days</option>
+                    </select>
+                  </div>
+
+                  {/* Response time */}
+                  <div>
+                    <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Response Time to Fix</label>
+                    <select
+                      value={slaResponseHours}
+                      onChange={e => setSlaResponseHours(Number(e.target.value))}
+                      className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
+                    >
+                      <option value={4}>4 hours</option>
+                      <option value={24}>24 hours</option>
+                      <option value={48}>48 hours</option>
+                      <option value={72}>72 hours</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
+                  {slaSaveResult ? (
+                    <span className="text-sm font-medium" style={{ color: slaSaveResult.ok ? '#00e096' : '#ff6b9d' }}>
+                      {slaSaveResult.msg}
+                    </span>
+                  ) : <span />}
+                  <button
+                    onClick={handleSaveSla}
+                    disabled={slaSaving}
+                    className="flex items-center gap-2 bg-gradient-to-r from-[#ffc947] to-[#ff9f43] text-[#030305] font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 text-sm"
+                  >
+                    {slaSaving ? 'Saving…' : 'Save SLA'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatDistanceToNow, parseISO } from 'date-fns'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
+import Link from 'next/link'
 
 interface Alert {
   id: string
@@ -17,8 +18,30 @@ interface Alert {
   is_read?: boolean
 }
 
+interface Campaign {
+  id: string
+  name: string
+  status: string
+}
+
+interface SlaStatus {
+  sla: {
+    min_compliance_score: number
+    audit_frequency_days: number
+    response_time_hours: number
+    target_compliant_pct: number
+  }
+  overdue_stores: number
+  current_compliant_pct: number | null
+  total_stores: number
+  open_breaches: number
+  is_meeting_sla: boolean | null
+}
+
 interface Props {
   alerts: Alert[]
+  campaigns?: Campaign[]
+  slaStatuses?: Record<string, SlaStatus>
 }
 
 const SEVERITY_CONFIG = {
@@ -94,8 +117,9 @@ function AlertToast({ alert, onDismiss }: ToastProps) {
   )
 }
 
-export default function AlertsClient({ alerts: initialAlerts }: Props) {
+export default function AlertsClient({ alerts: initialAlerts, campaigns = [], slaStatuses = {} }: Props) {
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning'>('all')
+  const [campaignFilter, setCampaignFilter] = useState<string>('all')
 
   // Realtime subscription
   const { rows: liveRows, isConnected } = useRealtimeTable<Alert>('alert_events')
@@ -119,8 +143,12 @@ export default function AlertsClient({ alerts: initialAlerts }: Props) {
   const allAlerts: Alert[] = [...liveRows, ...initialAlerts]
 
   const filtered = allAlerts.filter(a => {
-    if (filter === 'all') return true
-    return a.severity === filter
+    if (filter !== 'all' && a.severity !== filter) return false
+    if (campaignFilter !== 'all' && a.payload?.campaign_name) {
+      const campaign = campaigns.find(c => c.id === campaignFilter)
+      if (campaign && a.payload.campaign_name !== campaign.name) return false
+    }
+    return true
   })
 
   const filters: Array<{ key: 'all' | 'critical' | 'warning'; label: string }> = [
@@ -185,12 +213,95 @@ export default function AlertsClient({ alerts: initialAlerts }: Props) {
         </div>
       </div>
 
+      {/* SLA Status overview */}
+      {campaigns.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-sm font-bold text-[#b0b0d0] uppercase tracking-wider mb-3">SLA Status — Active Campaigns</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {campaigns.map(campaign => {
+              const sla = slaStatuses[campaign.id]
+              if (!sla) {
+                return (
+                  <Link
+                    key={campaign.id}
+                    href={`/campaigns/${campaign.id}`}
+                    className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-4 hover:border-[#7c6df5]/40 transition-colors"
+                  >
+                    <div className="text-sm font-bold text-white mb-1 truncate">{campaign.name}</div>
+                    <div className="text-xs text-[#b0b0d0]">No SLA configured</div>
+                  </Link>
+                )
+              }
+
+              const pct = sla.current_compliant_pct ?? 0
+              const target = sla.sla?.target_compliant_pct ?? 90
+              const isMet = sla.is_meeting_sla === true
+              const isAtRisk = !isMet && pct >= target - 5
+              const color = isMet ? '#00e096' : isAtRisk ? '#ffc947' : '#ff4d6d'
+              const statusLabel = isMet ? 'MET \u2713' : isAtRisk ? 'AT RISK \u26a0' : 'BREACHED \u2717'
+
+              return (
+                <Link
+                  key={campaign.id}
+                  href={`/campaigns/${campaign.id}`}
+                  className="bg-[#0c0c18] border rounded-2xl p-4 hover:opacity-80 transition-opacity"
+                  style={{ borderColor: `${color}30` }}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="text-sm font-bold text-white truncate flex-1 mr-2">{campaign.name}</div>
+                    <span
+                      className="text-xs font-bold px-2 py-0.5 rounded-lg flex-shrink-0"
+                      style={{ background: `${color}15`, color, border: `1px solid ${color}30` }}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-[#b0b0d0]">
+                    <span>
+                      <span className="font-bold" style={{ color }}>{pct ?? 0}%</span>
+                      <span className="ml-1">compliant</span>
+                    </span>
+                    {sla.overdue_stores > 0 && (
+                      <span className="text-[#ffc947] font-semibold">
+                        {sla.overdue_stores} overdue
+                      </span>
+                    )}
+                    {sla.open_breaches > 0 && (
+                      <span className="text-[#ff4d6d] font-semibold">
+                        {sla.open_breaches} breach{sla.open_breaches !== 1 ? 'es' : ''}
+                      </span>
+                    )}
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Toast banners for incoming realtime alerts */}
       {toasts.length > 0 && (
         <div className="mb-5">
           {toasts.map(t => (
             <AlertToast key={t.id} alert={t} onDismiss={() => dismissToast(t.id)} />
           ))}
+        </div>
+      )}
+
+      {/* Campaign selector */}
+      {campaigns.length > 0 && (
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-xs text-[#b0b0d0] font-semibold uppercase tracking-wider">Filter by campaign:</span>
+          <select
+            value={campaignFilter}
+            onChange={e => setCampaignFilter(e.target.value)}
+            className="bg-[#0c0c18] border border-[#222240] rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-[#7c6df5]/60 transition-colors cursor-pointer"
+          >
+            <option value="all">All campaigns</option>
+            {campaigns.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
         </div>
       )}
 

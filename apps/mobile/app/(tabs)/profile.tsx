@@ -7,8 +7,10 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Share,
+  Clipboard,
 } from 'react-native'
-import { User, CheckCircle, LogOut, CreditCard } from 'lucide-react-native'
+import { User, CheckCircle, LogOut, CreditCard, Gift, Copy, Share2 } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
 
@@ -19,6 +21,8 @@ type Profile = {
   stripe_account_id: string | null
   collector_tier: string | null
   tier_updated_at: string | null
+  referral_code: string | null
+  referral_bonus_earned_cents: number
   [key: string]: unknown
 }
 
@@ -30,6 +34,11 @@ type TierDef = {
   payout_multiplier: number
   badge_color: string
   description: string
+}
+
+type ReferralStats = {
+  friends_joined: number
+  friends_completed_task: number
 }
 
 const TIERS: TierDef[] = [
@@ -58,7 +67,6 @@ function TierSection({ profile, taskCount, avgScore }: {
   const tier = getTierDef(profile.collector_tier)
   const next = getNextTier(profile.collector_tier)
 
-  // Progress toward next tier (by tasks)
   const progressPct = next
     ? Math.min(100, Math.round((taskCount / next.min_tasks) * 100))
     : 100
@@ -67,7 +75,6 @@ function TierSection({ profile, taskCount, avgScore }: {
     <View style={ts.section}>
       <Text style={ts.sectionLabel}>COLLECTOR TIER</Text>
       <View style={ts.card}>
-        {/* Badge circle */}
         <View style={[ts.badgeCircle, { backgroundColor: tier.badge_color + '22', borderColor: tier.badge_color + '66' }]}>
           <Text style={[ts.badgeLetter, { color: tier.badge_color }]}>
             {tier.name[0]}
@@ -77,7 +84,6 @@ function TierSection({ profile, taskCount, avgScore }: {
         <Text style={[ts.tierName, { color: tier.badge_color }]}>{tier.name}</Text>
         <Text style={ts.tierDesc}>{tier.description}</Text>
 
-        {/* Stats row */}
         <View style={ts.statsRow}>
           <View style={ts.stat}>
             <Text style={ts.statValue}>{taskCount}</Text>
@@ -97,7 +103,6 @@ function TierSection({ profile, taskCount, avgScore }: {
           </View>
         </View>
 
-        {/* Progress to next tier */}
         {next ? (
           <View style={ts.progressSection}>
             <View style={ts.progressHeader}>
@@ -123,6 +128,94 @@ function TierSection({ profile, taskCount, avgScore }: {
   )
 }
 
+// ── Refer & Earn Section ──────────────────────────────────────────────────────
+
+function ReferSection({ profile, stats }: { profile: Profile; stats: ReferralStats }) {
+  const [copied, setCopied] = useState(false)
+  const code = profile.referral_code ?? '—'
+  const bonusPounds = (profile.referral_bonus_earned_cents / 100).toFixed(2)
+  const shareUrl = `https://mosaic.app/join/${code}`
+  const shareMsg = `Join me on Mosaic — earn money by auditing retail shelves! Use my code ${code}: ${shareUrl}`
+
+  function handleCopy() {
+    Clipboard.setString(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  async function handleShare() {
+    try {
+      await Share.share({ message: shareMsg })
+    } catch {
+      // dismissed
+    }
+  }
+
+  return (
+    <View style={rs.section}>
+      <Text style={rs.sectionLabel}>REFER &amp; EARN</Text>
+      <View style={rs.card}>
+        {/* Code display */}
+        <Text style={rs.codeLabel}>Your referral code</Text>
+        <View style={rs.codeRow}>
+          <Text style={rs.code}>{code}</Text>
+          <TouchableOpacity style={rs.copyBtn} onPress={handleCopy}>
+            <Copy size={14} color={copied ? '#00e096' : '#7c6df5'} />
+            <Text style={[rs.copyBtnText, copied && rs.copyBtnTextDone]}>
+              {copied ? 'Copied!' : 'Copy'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Earnings + stats */}
+        <View style={rs.statsRow}>
+          <View style={rs.stat}>
+            <Text style={rs.statValue}>£{bonusPounds}</Text>
+            <Text style={rs.statLabel}>Referral earned</Text>
+          </View>
+          <View style={rs.statDivider} />
+          <View style={rs.stat}>
+            <Text style={rs.statValue}>{stats.friends_joined}</Text>
+            <Text style={rs.statLabel}>Friends joined</Text>
+          </View>
+          <View style={rs.statDivider} />
+          <View style={rs.stat}>
+            <Text style={rs.statValue}>{stats.friends_completed_task}</Text>
+            <Text style={rs.statLabel}>Completed tasks</Text>
+          </View>
+        </View>
+
+        {/* Share button */}
+        <TouchableOpacity style={rs.shareBtn} onPress={handleShare}>
+          <Share2 size={15} color="#ffffff" />
+          <Text style={rs.shareBtnText}>Share your code</Text>
+        </TouchableOpacity>
+
+        {/* How it works */}
+        <View style={rs.howSection}>
+          <Text style={rs.howTitle}>How it works</Text>
+          <View style={rs.howSteps}>
+            <View style={rs.howStep}>
+              <View style={rs.howDot}><Text style={rs.howDotNum}>1</Text></View>
+              <Text style={rs.howText}>Friend signs up with your code</Text>
+            </View>
+            <View style={rs.howConnector} />
+            <View style={rs.howStep}>
+              <View style={rs.howDot}><Text style={rs.howDotNum}>2</Text></View>
+              <Text style={rs.howText}>They complete their first task</Text>
+            </View>
+            <View style={rs.howConnector} />
+            <View style={rs.howStep}>
+              <View style={[rs.howDot, rs.howDotGreen]}><Text style={rs.howDotNum}>3</Text></View>
+              <Text style={rs.howText}>You earn £5 — and £10 at their 10th task</Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </View>
+  )
+}
+
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function ProfileScreen() {
@@ -132,10 +225,9 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [taskCount, setTaskCount] = useState(0)
   const [avgScore, setAvgScore] = useState(0)
+  const [referralStats, setReferralStats] = useState<ReferralStats>({ friends_joined: 0, friends_completed_task: 0 })
   const [loading, setLoading] = useState(true)
   const [signingOut, setSigningOut] = useState(false)
-
-  // ── Data fetching ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     async function loadProfile() {
@@ -153,15 +245,14 @@ export default function ProfileScreen() {
         supabase.rpc('get_collector_earnings', { p_collector_id: user.id }),
       ])
 
-      setProfile(profileRes.data ?? null)
+      const prof = profileRes.data ?? null
+      setProfile(prof)
 
-      // Pull task count + avg score from earnings function if available
       if (statsRes.data) {
         const row = Array.isArray(statsRes.data) ? statsRes.data[0] : statsRes.data
         setTaskCount(row?.completed_tasks ?? 0)
       }
 
-      // Get avg score from task history
       const { data: historyData } = await supabase.rpc('get_collector_task_history', {
         p_collector_id: user.id,
         limit_n: 200,
@@ -174,13 +265,32 @@ export default function ProfileScreen() {
         }
       }
 
+      // Load referral stats
+      if (prof?.id) {
+        const { data: eventsData } = await supabase
+          .from('referral_events')
+          .select('referee_id, event_type')
+          .eq('referrer_id', prof.id)
+
+        if (eventsData) {
+          const uniqueReferees = new Set(eventsData.map((e: any) => e.referee_id))
+          const completedSet = new Set(
+            eventsData
+              .filter((e: any) => e.event_type === 'first_task' || e.event_type === 'tenth_task')
+              .map((e: any) => e.referee_id)
+          )
+          setReferralStats({
+            friends_joined: uniqueReferees.size,
+            friends_completed_task: completedSet.size,
+          })
+        }
+      }
+
       setLoading(false)
     }
 
     loadProfile()
   }, [])
-
-  // ── Actions ───────────────────────────────────────────────────────────────────
 
   function handleConnectStripe() {
     Alert.alert(
@@ -196,13 +306,10 @@ export default function ProfileScreen() {
     router.replace('/auth')
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────────
-
   const stripeConnected = !!profile?.stripe_account_id
 
   return (
     <ScrollView style={s.container} contentContainerStyle={s.scrollContent}>
-      {/* Header */}
       <View style={s.header}>
         <Text style={s.headerTitle}>Profile</Text>
         <User size={22} color="#7c6df5" />
@@ -230,6 +337,11 @@ export default function ProfileScreen() {
               taskCount={taskCount}
               avgScore={avgScore}
             />
+          )}
+
+          {/* Refer & Earn */}
+          {profile && (
+            <ReferSection profile={profile} stats={referralStats} />
           )}
 
           {/* Stripe / bank account */}
@@ -379,26 +491,10 @@ const ts = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 4,
   },
-  badgeLetter: {
-    fontSize: 36,
-    fontWeight: '900',
-  },
-  tierName: {
-    fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: -0.5,
-  },
-  tierDesc: {
-    fontSize: 13,
-    color: '#b0b0d0',
-    textAlign: 'center',
-  },
-  statsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    width: '100%',
-  },
+  badgeLetter: { fontSize: 36, fontWeight: '900' },
+  tierName: { fontSize: 24, fontWeight: '900', letterSpacing: -0.5 },
+  tierDesc: { fontSize: 13, color: '#b0b0d0', textAlign: 'center' },
+  statsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, width: '100%' },
   stat: { flex: 1, alignItems: 'center', gap: 3 },
   statValue: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
   statLabel: { fontSize: 10, fontWeight: '600', color: '#b0b0d0', textAlign: 'center' },
@@ -426,4 +522,88 @@ const ts = StyleSheet.create({
     marginTop: 4,
   },
   eliteText: { fontSize: 13, fontWeight: '700', color: '#7c6df5' },
+})
+
+const rs = StyleSheet.create({
+  section: { marginTop: 24, paddingHorizontal: 16 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#b0b0d0',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  card: {
+    backgroundColor: '#0c0c18',
+    borderWidth: 1,
+    borderColor: '#2a1f5a',
+    borderRadius: 18,
+    padding: 20,
+    gap: 16,
+  },
+  codeLabel: { fontSize: 12, fontWeight: '600', color: '#b0b0d0' },
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  code: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#7c6df5',
+    letterSpacing: 3,
+    fontVariant: ['tabular-nums'] as any,
+  },
+  copyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(124,109,245,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,109,245,0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  copyBtnText: { fontSize: 13, fontWeight: '700', color: '#7c6df5' },
+  copyBtnTextDone: { color: '#00e096' },
+
+  statsRow: { flexDirection: 'row', alignItems: 'center' },
+  stat: { flex: 1, alignItems: 'center', gap: 3 },
+  statValue: { fontSize: 20, fontWeight: '800', color: '#ffffff' },
+  statLabel: { fontSize: 10, fontWeight: '600', color: '#b0b0d0', textAlign: 'center' },
+  statDivider: { width: 1, height: 36, backgroundColor: '#222240' },
+
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#7c6df5',
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  shareBtnText: { fontSize: 15, fontWeight: '800', color: '#ffffff' },
+
+  howSection: { gap: 10 },
+  howTitle: { fontSize: 12, fontWeight: '700', color: '#b0b0d0', letterSpacing: 0.5 },
+  howSteps: { gap: 0 },
+  howStep: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  howConnector: { width: 2, height: 12, backgroundColor: '#222240', marginLeft: 11, marginVertical: 2 },
+  howDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(124,109,245,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(124,109,245,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  howDotGreen: {
+    backgroundColor: 'rgba(0,224,150,0.15)',
+    borderColor: 'rgba(0,224,150,0.4)',
+  },
+  howDotNum: { fontSize: 11, fontWeight: '800', color: '#ffffff' },
+  howText: { fontSize: 13, color: '#b0b0d0', flex: 1, lineHeight: 18 },
 })
