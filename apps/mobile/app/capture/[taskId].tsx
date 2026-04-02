@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Dimensions,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera'
@@ -18,6 +19,14 @@ type TaskWithRelations = Task & {
   campaigns: Campaign
 }
 
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
+
+// Frame guide dimensions — 80% width, 55% height
+const FRAME_W = SCREEN_WIDTH * 0.8
+const FRAME_H = SCREEN_HEIGHT * 0.55
+const CORNER = 22  // corner bracket length
+const CORNER_THICKNESS = 3
+
 export default function CaptureScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>()
   const router = useRouter()
@@ -28,6 +37,7 @@ export default function CaptureScreen() {
   const [facing] = useState<CameraType>('back')
   const [capturedUri, setCapturedUri] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
 
   const cameraRef = useRef<CameraView>(null)
 
@@ -51,16 +61,19 @@ export default function CaptureScreen() {
     const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 })
     if (photo) {
       setCapturedUri(photo.uri)
+      setUploadError(null)
     }
   }
 
   function handleRetake() {
     setCapturedUri(null)
+    setUploadError(null)
   }
 
   async function handleUsePhoto() {
     if (!capturedUri || !task) return
     setUploading(true)
+    setUploadError(null)
 
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -91,7 +104,7 @@ export default function CaptureScreen() {
       const photoUrl = urlData.publicUrl
 
       // Create submission row
-      const { error: submissionError } = await supabase
+      const { data: submissionData, error: submissionError } = await supabase
         .from('submissions')
         .insert({
           task_id: task.id,
@@ -102,6 +115,8 @@ export default function CaptureScreen() {
           status: 'pending_review',
           submitted_at: new Date().toISOString(),
         })
+        .select('id')
+        .single()
 
       if (submissionError) throw submissionError
 
@@ -113,13 +128,17 @@ export default function CaptureScreen() {
 
       if (taskError) throw taskError
 
-      // Navigate to success — pass payout + task id
+      // Navigate to success — pass payout + submissionId
       router.replace({
         pathname: '/capture/success',
-        params: { payout: String(task.payout_cents), taskId: task.id },
+        params: {
+          payout: String(task.payout_cents),
+          taskId: task.id,
+          submissionId: submissionData?.id ?? '',
+        },
       })
     } catch (err) {
-      Alert.alert('Upload failed', 'Something went wrong. Please try again.')
+      setUploadError('Upload failed. Try again.')
       setUploading(false)
     }
   }
@@ -162,6 +181,13 @@ export default function CaptureScreen() {
           <Text style={s.overlayLabel}>Review your photo</Text>
         </View>
 
+        {/* Error message */}
+        {uploadError && (
+          <View style={s.errorBanner}>
+            <Text style={s.errorText}>{uploadError}</Text>
+          </View>
+        )}
+
         {/* Action buttons */}
         <View style={s.previewActions}>
           <TouchableOpacity style={s.retakeBtn} onPress={handleRetake} disabled={uploading}>
@@ -173,7 +199,10 @@ export default function CaptureScreen() {
             disabled={uploading}
           >
             {uploading ? (
-              <ActivityIndicator color="#030305" size="small" />
+              <View style={s.uploadingRow}>
+                <ActivityIndicator color="#030305" size="small" />
+                <Text style={s.uploadingText}>Uploading...</Text>
+              </View>
             ) : (
               <Text style={s.usePhotoBtnText}>Use Photo</Text>
             )}
@@ -190,7 +219,27 @@ export default function CaptureScreen() {
         {/* Store name overlay */}
         <View style={s.cameraOverlayTop}>
           <Text style={s.overlayStoreName} numberOfLines={1}>{storeName}</Text>
-          <Text style={s.overlayHint}>Capture the full shelf display</Text>
+          <Text style={s.overlayHint}>Frame the full shelf display</Text>
+        </View>
+
+        {/* Frame guide overlay — centered */}
+        <View style={s.frameGuideContainer} pointerEvents="none">
+          <View style={s.frameGuide}>
+            {/* Thin border */}
+            <View style={s.frameBorder} />
+            {/* Top-left */}
+            <View style={[s.cH, { top: 0, left: 0 }]} />
+            <View style={[s.cV, { top: 0, left: 0 }]} />
+            {/* Top-right */}
+            <View style={[s.cH, { top: 0, right: 0 }]} />
+            <View style={[s.cV, { top: 0, right: 0 }]} />
+            {/* Bottom-left */}
+            <View style={[s.cH, { bottom: 0, left: 0 }]} />
+            <View style={[s.cV, { bottom: 0, left: 0 }]} />
+            {/* Bottom-right */}
+            <View style={[s.cH, { bottom: 0, right: 0 }]} />
+            <View style={[s.cV, { bottom: 0, right: 0 }]} />
+          </View>
         </View>
 
         {/* Capture button */}
@@ -233,6 +282,47 @@ const s = StyleSheet.create({
   overlayHint: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
   overlayLabel: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
 
+  // Frame guide
+  frameGuideContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  frameGuide: {
+    width: FRAME_W,
+    height: FRAME_H,
+    position: 'relative',
+  },
+  frameBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 1,
+    borderColor: 'rgba(124,109,245,0.25)',
+    borderRadius: 4,
+  },
+  // Corner bracket bars — position props (top/bottom/left/right) applied inline
+  cH: {
+    position: 'absolute',
+    width: CORNER,
+    height: CORNER_THICKNESS,
+    backgroundColor: '#7c6df5',
+    borderRadius: 2,
+  },
+  cV: {
+    position: 'absolute',
+    width: CORNER_THICKNESS,
+    height: CORNER,
+    backgroundColor: '#7c6df5',
+    borderRadius: 2,
+  },
+
   cameraOverlayBottom: {
     position: 'absolute',
     bottom: 0,
@@ -271,6 +361,24 @@ const s = StyleSheet.create({
     paddingBottom: 20,
     backgroundColor: 'rgba(3,3,5,0.65)',
   },
+  errorBanner: {
+    position: 'absolute',
+    bottom: 140,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255,77,109,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,77,109,0.4)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ff4d6d',
+  },
   previewActions: {
     position: 'absolute',
     bottom: 0,
@@ -299,7 +407,10 @@ const s = StyleSheet.create({
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 56,
   },
   usePhotoBtnText: { fontSize: 16, fontWeight: '800', color: '#030305' },
+  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  uploadingText: { fontSize: 15, fontWeight: '700', color: '#030305' },
   btnDisabled: { opacity: 0.6 },
 })
