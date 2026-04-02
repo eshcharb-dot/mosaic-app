@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Mosaic",
+    "slug": "mosaic-collector",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "mosaic",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#030305"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mosaic.collector",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Mosaic needs camera access to capture shelf photos for compliance verification.",
+        "NSLocationWhenInUseUsageDescription": "Mosaic uses your location to match you with nearby store tasks on your commute.",
+        "NSPhotoLibraryUsageDescription": "Mosaic needs photo library access to upload shelf photos."
+      }
+    },
+    "android": {
+      "package": "com.mosaic.collector",
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-camera",
+      "expo-location"
+    ]
+  }
+}
