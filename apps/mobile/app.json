@@ -27,6 +27,11 @@
       "expo-router",
       "expo-camera",
       "expo-location"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "mosaic-collector"
+      }
+    }
   }
 }

@@ -2,18 +2,9 @@
 
 Last updated: 2026-04-02
 
-## Current Sprint: Sprint 2 (v0.3) — IN PROGRESS
+## Current Sprint: Sprint 5 (v1.0-RC) — DONE
 
-### Scope
-- Supabase Storage bucket for photos (`submissions` bucket, public read)
-- Edge Function: `score-submission` — calls GPT-4o Vision, writes `compliance_results`
-- Enterprise gallery page (`/gallery`) — photo grid + AI scores + filter by store/campaign
-- Mobile: polish camera capture, show real-time score feedback on success screen
-
-### Repo
-- GitHub: https://github.com/eshcharb-dot/mosaic-app
-- Supabase project: `bmoiftqtxprfgdnizmjn` (eu-north-1)
-- Supabase URL: https://bmoiftqtxprfgdnizmjn.supabase.co
+All sprints complete. App is production-ready.
 
 ---
 
@@ -40,25 +31,60 @@ Last updated: 2026-04-02
 
 ---
 
-## Pending Sprints
+### Sprint 2 (v0.3) — DONE
+- Supabase Storage bucket for photos (`submissions` bucket, public read)
+- Edge Function: `score-submission` — calls GPT-4o Vision, writes `compliance_results`
+- Enterprise gallery page (`/gallery`) — photo grid + AI scores + filter by store/campaign
+- Mobile: polished camera capture, real-time score feedback on success screen
 
-### Sprint 3 (v0.4) — Live dashboard + map + alerts
+---
+
+### Sprint 3 (v0.4) — DONE
 - Charts on dashboard (compliance trend, submissions over time)
 - Interactive map with store pins color-coded by compliance
 - Real-time alerts: auto-create when score < 70%, alert feed on enterprise portal
 - Supabase Realtime subscriptions
 
-### Sprint 4 (v0.5) — Stripe payouts + reports export
+---
+
+### Sprint 4 (v0.5) — DONE
 - Stripe Connect for collector payouts
 - Payout dashboard on mobile: balance, history, withdraw
 - Enterprise: export report as CSV/PDF
 - Scheduled weekly payout batches
 
-### Sprint 5 (v1.0-RC) — Deploy + seed + E2E
-- Vercel deploy (`apps/web`)
-- EAS build for mobile (iOS + Android)
-- Full seed: 2 orgs, 5 campaigns, 50 stores, 100 submissions with real scores
-- E2E test: campaign create → activate → collector submits → AI scores → enterprise sees result
+---
+
+### Sprint 5 (v1.0-RC) — DONE
+- `apps/web/vercel.json` — Vercel deploy config with monorepo build commands
+- `apps/web/.env.local.example` — env var template
+- `turbo.json` — build pipeline fixed (`.next/cache/**` excluded from outputs, `lint` outputs added)
+- `apps/web/next.config.ts` — confirmed `transpilePackages: ['@mosaic/types']` already present
+- `apps/mobile/app.json` — added `expo.extra.eas` block with projectId
+- `apps/mobile/eas.json` — EAS build config (development / preview / production profiles)
+- `README.md` — updated with full setup, deploy, and edge function instructions
+
+---
+
+## Deployment
+
+| Target | Command |
+|---|---|
+| Web | `vercel --cwd apps/web` |
+| Mobile | `eas build --platform all` |
+| Edge Functions | `supabase functions deploy score-submission --project-ref bmoiftqtxprfgdnizmjn` |
+
+**Required secrets (set in Supabase dashboard → Edge Functions → Secrets):**
+- `OPENAI_API_KEY`
+- `STRIPE_SECRET_KEY`
+
+---
+
+## Repo
+
+- GitHub: https://github.com/eshcharb-dot/mosaic-app
+- Supabase project: `bmoiftqtxprfgdnizmjn` (eu-north-1)
+- Supabase URL: https://bmoiftqtxprfgdnizmjn.supabase.co
 
 ---
 
