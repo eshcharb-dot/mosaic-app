@@ -31,21 +31,38 @@ export default async function DashboardPage() {
   // Use the first campaign for trend + map data
   const firstCampaignId = campaignsOverview?.[0]?.campaign_id ?? null
 
-  const [trendRes, mapRes] = await Promise.all([
+  const [trendRes, mapRes, territoryMapRes] = await Promise.all([
     firstCampaignId
       ? supabase.rpc('get_compliance_trend', { campaign_id: firstCampaignId })
       : Promise.resolve({ data: [] }),
     firstCampaignId
       ? supabase.rpc('get_store_map_data', { campaign_id: firstCampaignId })
       : Promise.resolve({ data: [] }),
+    orgId
+      ? supabase.rpc('get_store_territory_map', { p_org_id: orgId })
+      : Promise.resolve({ data: [] }),
   ])
+
+  // Merge territory data into map points
+  const territoryByStore = new Map<string, any>(
+    (territoryMapRes.data ?? []).map((r: any) => [r.store_id, r])
+  )
+  const enrichedMapData = (mapRes.data ?? []).map((s: any) => {
+    const t = territoryByStore.get(s.store_id)
+    return {
+      ...s,
+      territory_id: t?.territory_id ?? null,
+      territory_name: t?.territory_name ?? null,
+      territory_color: t?.territory_color ?? null,
+    }
+  })
 
   return (
     <DashboardClient
       campaigns={campaignsOverview ?? []}
       submissions={recentSubmissions ?? []}
       trend={trendRes.data ?? []}
-      mapData={mapRes.data ?? []}
+      mapData={enrichedMapData}
     />
   )
 }

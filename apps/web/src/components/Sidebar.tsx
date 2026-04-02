@@ -1,13 +1,24 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+
+function TerritoryIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+      <circle cx="12" cy="9" r="2.5" />
+      <path d="M4 20 Q8 17 12 18.5 Q16 20 20 17" strokeOpacity="0.5" strokeDasharray="2 2" />
+    </svg>
+  )
+}
 
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
   { href: '/analytics', label: 'Analytics', icon: BarChart2, badge: null },
   { href: '/stores', label: 'Stores', icon: Store, badge: null },
+  { href: '/territories', label: 'Territories', icon: TerritoryIcon, badge: null },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: null },
   { href: '/gallery', label: 'Gallery', icon: Image, badge: null },
   { href: '/alerts', label: 'Alerts', icon: Bell, badge: 3 },
@@ -100,6 +111,17 @@ export default function Sidebar({ user }: { user: any }) {
                   Templates
                 </a>
               )}
+              {/* ROI Calculator sub-item under Analytics */}
+              {href === '/analytics' && (
+                <a
+                  href="/roi"
+                  className="flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5"
+                  style={pathname === '/roi' ? activeSubStyle : undefined}
+                >
+                  <TrendingUp size={13} />
+                  ROI Calculator
+                </a>
+              )}
             </div>
           )
         })}
@@ -150,6 +172,19 @@ export default function Sidebar({ user }: { user: any }) {
         >
           <Palette size={13} />
           Branding
+        </a>
+        {/* Digests sub-item */}
+        <a
+          href="/settings/digests"
+          className="flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5"
+          style={
+            pathname === '/settings/digests' || pathname.startsWith('/settings/digests/')
+              ? activeSubStyle
+              : undefined
+          }
+        >
+          <Mail size={13} />
+          Digests
         </a>
       </div>
 

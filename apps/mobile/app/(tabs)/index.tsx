@@ -91,7 +91,7 @@ export default function TaskFeedScreen() {
   async function loadTasks() {
     const { data } = await supabase
       .from('tasks')
-      .select('*, stores(name, address, city, lat, lng), campaigns(name, product_name, sla_minutes, planogram_url)')
+      .select('*, stores(name, address, city, lat, lng, territory_stores(territories(id, name, color))), campaigns(name, product_name, sla_minutes, planogram_url)')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(30)
@@ -162,6 +162,7 @@ export default function TaskFeedScreen() {
           renderItem={({ item: task }) => {
             const store = (task as any).stores
             const campaign = (task as any).campaigns
+            const territory = store?.territory_stores?.[0]?.territories ?? null
             const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
             const dist = userLoc && store?.lat && store?.lng
               ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
@@ -222,6 +223,13 @@ export default function TaskFeedScreen() {
                   <View style={s.metaItem}>
                     <Text style={s.metaTextPurple}>45s task</Text>
                   </View>
+                  {territory && (
+                    <View style={[s.territoryPill, { borderColor: (territory.color ?? '#7c6df5') + '55', backgroundColor: (territory.color ?? '#7c6df5') + '18' }]}>
+                      <Text style={[s.territoryText, { color: territory.color ?? '#7c6df5' }]} numberOfLines={1}>
+                        {territory.name}
+                      </Text>
+                    </View>
+                  )}
                 </View>
                 <TouchableOpacity style={s.acceptBtn} onPress={() => router.push(`/task/${task.id}`)}>
                   <Text style={s.acceptBtnText}>Accept & Navigate</Text>
@@ -269,4 +277,6 @@ const s = StyleSheet.create({
   acceptBtnText: { fontSize: 15, fontWeight: '700', color: '#030305' },
   emptyTitle: { fontSize: 20, fontWeight: '800', color: '#ffffff', marginBottom: 8 },
   emptyText: { fontSize: 15, color: '#b0b0d0', textAlign: 'center', lineHeight: 22 },
+  territoryPill: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
+  territoryText: { fontSize: 11, fontWeight: '600' },
 })

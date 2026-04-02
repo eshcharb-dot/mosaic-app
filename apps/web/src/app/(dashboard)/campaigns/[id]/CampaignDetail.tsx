@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2, Plus, AlertTriangle, Shield, ShieldAlert } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2, Plus, AlertTriangle, Shield, ShieldAlert, TrendingUp } from 'lucide-react'
+import ROICalculator from './ROICalculator'
 import Badge from '@/components/ui/Badge'
 import Checkbox from '@/components/ui/Checkbox'
 import StoreUpload from './StoreUpload'
@@ -106,7 +107,7 @@ interface Props {
   campaignStores: CampaignStore[]
 }
 
-type Tab = 'stores' | 'submissions' | 'settings'
+type Tab = 'stores' | 'submissions' | 'roi' | 'settings'
 
 export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('stores')
@@ -435,6 +436,7 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: 'stores', label: 'Stores', icon: Store },
     { key: 'submissions', label: 'Submissions', icon: BarChart3 },
+    { key: 'roi', label: 'ROI', icon: TrendingUp },
     { key: 'settings', label: 'Settings', icon: Settings },
   ]
 
@@ -747,6 +749,14 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           <BarChart3 size={32} className="text-[#b0b0d0] opacity-30 mb-3" />
           <p className="text-[#b0b0d0] text-sm">Submissions will appear here once collectors start capturing data.</p>
         </div>
+      )}
+
+      {/* Tab: ROI */}
+      {activeTab === 'roi' && (
+        <ROICalculator
+          storeCount={campaignStores.length}
+          avgScore={campaign.compliance_score}
+        />
       )}
 
       {/* Tab: Settings */}

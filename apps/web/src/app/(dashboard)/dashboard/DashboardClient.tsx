@@ -31,6 +31,10 @@ interface StoreMapPoint {
   latest_score: number | null
   is_compliant: boolean | null
   submission_count: number
+  // territory fields (optional — populated in territory view)
+  territory_id?: string | null
+  territory_name?: string | null
+  territory_color?: string | null
 }
 
 interface CampaignOverview {
@@ -67,7 +71,13 @@ const ChartTooltip = memo(function ChartTooltip({ active, payload, label }: any)
 })
 
 // SVG Store Map
-const StoreSvgMap = memo(function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
+const StoreSvgMap = memo(function StoreSvgMap({
+  stores,
+  viewMode,
+}: {
+  stores: StoreMapPoint[]
+  viewMode: 'compliance' | 'territory'
+}) {
   const W = 800
   const H = 340
   const PAD = 32
@@ -89,6 +99,15 @@ const StoreSvgMap = memo(function StoreSvgMap({ stores }: { stores: StoreMapPoin
     return { x, y }
   }
 
+  // Build unique territories for legend
+  const territoriesInView = Array.from(
+    new Map(
+      stores
+        .filter(s => s.territory_id)
+        .map(s => [s.territory_id, { id: s.territory_id!, name: s.territory_name ?? 'Unknown', color: s.territory_color ?? '#7c6df5' }])
+    ).values()
+  ).slice(0, 5)
+
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
@@ -103,23 +122,51 @@ const StoreSvgMap = memo(function StoreSvgMap({ stores }: { stores: StoreMapPoin
       ))}
       {stores.map(s => {
         const { x, y } = project(s.lat, s.lng)
-        const color = s.is_compliant === null ? '#b0b0d0' : s.is_compliant ? '#00e096' : '#ff4d6d'
+        let color: string
+        if (viewMode === 'territory') {
+          color = s.territory_color ?? '#606080'
+        } else {
+          color = s.is_compliant === null ? '#b0b0d0' : s.is_compliant ? '#00e096' : '#ff4d6d'
+        }
         const score = s.latest_score != null ? `${Math.round(s.latest_score)}%` : 'No data'
+        const label = viewMode === 'territory' && s.territory_name
+          ? `${s.store_name} — ${s.territory_name}`
+          : `${s.store_name} — ${score}`
         return (
           <g key={s.store_id}>
             <circle cx={x} cy={y} r={9} fill={color} opacity={0.15} />
             <circle cx={x} cy={y} r={5} fill={color} opacity={0.85}>
-              <title>{s.store_name} — {score}</title>
+              <title>{label}</title>
             </circle>
           </g>
         )
       })}
-      <g transform={`translate(${W - PAD - 130}, ${H - PAD - 10})`}>
-        <circle cx={6} cy={0} r={5} fill="#00e096" opacity={0.85} />
-        <text x={14} y={4} fill="#b0b0d0" fontSize={11}>Compliant</text>
-        <circle cx={80} cy={0} r={5} fill="#ff4d6d" opacity={0.85} />
-        <text x={88} y={4} fill="#b0b0d0" fontSize={11}>Non-compliant</text>
-      </g>
+
+      {/* Legend */}
+      {viewMode === 'compliance' ? (
+        <g transform={`translate(${W - PAD - 130}, ${H - PAD - 10})`}>
+          <circle cx={6} cy={0} r={5} fill="#00e096" opacity={0.85} />
+          <text x={14} y={4} fill="#b0b0d0" fontSize={11}>Compliant</text>
+          <circle cx={80} cy={0} r={5} fill="#ff4d6d" opacity={0.85} />
+          <text x={88} y={4} fill="#b0b0d0" fontSize={11}>Non-compliant</text>
+        </g>
+      ) : (
+        <g transform={`translate(${PAD}, ${H - PAD - 10})`}>
+          {territoriesInView.map((t, i) => (
+            <g key={t.id} transform={`translate(${i * 110}, 0)`}>
+              <circle cx={6} cy={0} r={5} fill={t.color} opacity={0.85} />
+              <text x={14} y={4} fill="#b0b0d0" fontSize={11}>{t.name.slice(0, 10)}</text>
+            </g>
+          ))}
+          {stores.some(s => !s.territory_id) && (
+            <g transform={`translate(${territoriesInView.length * 110}, 0)`}>
+              <circle cx={6} cy={0} r={5} fill="#606080" opacity={0.85} />
+              <text x={14} y={4} fill="#b0b0d0" fontSize={11}>Unassigned</text>
+            </g>
+          )}
+        </g>
+      )}
+
       {stores.length === 0 && (
         <text x={W / 2} y={H / 2} textAnchor="middle" fill="#b0b0d0" fontSize={14}>
           No store location data available
@@ -285,6 +332,8 @@ const CampaignCard = memo(function CampaignCard({ c }: { c: CampaignOverview }) 
 })
 
 export default function DashboardClient({ campaigns, submissions, trend, mapData }: Props) {
+  const [mapViewMode, setMapViewMode] = useState<'compliance' | 'territory'>('compliance')
+
   // Realtime new submissions
   const { rows: liveSubmissions, isConnected } = useRealtimeTable<any>('submissions')
   const [liveCount, setLiveCount] = useState(0)
@@ -511,19 +560,50 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
             <h2 className="text-lg font-bold text-white">Store Coverage</h2>
             <p className="text-[#b0b0d0] text-sm mt-0.5">Geographic distribution of audited stores</p>
           </div>
-          <div className="flex items-center gap-4 text-xs text-[#b0b0d0]">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#00e096]" />
-              {mapData.filter(s => s.is_compliant).length} compliant
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-[#ff4d6d]" />
-              {mapData.filter(s => s.is_compliant === false).length} non-compliant
-            </span>
-            <MapPin size={14} className="text-[#7c6df5]" />
+          <div className="flex items-center gap-4">
+            {/* View toggle */}
+            <div className="flex items-center gap-1 bg-[#030305] border border-[#222240] rounded-xl p-1">
+              <button
+                onClick={() => setMapViewMode('compliance')}
+                className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                style={mapViewMode === 'compliance'
+                  ? { background: '#7c6df5', color: '#ffffff' }
+                  : { color: '#b0b0d0' }}
+              >
+                Compliance
+              </button>
+              <button
+                onClick={() => setMapViewMode('territory')}
+                className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
+                style={mapViewMode === 'territory'
+                  ? { background: '#7c6df5', color: '#ffffff' }
+                  : { color: '#b0b0d0' }}
+              >
+                Territory
+              </button>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-[#b0b0d0]">
+              {mapViewMode === 'compliance' ? (
+                <>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#00e096]" />
+                    {mapData.filter(s => s.is_compliant).length} compliant
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#ff4d6d]" />
+                    {mapData.filter(s => s.is_compliant === false).length} non-compliant
+                  </span>
+                </>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[#b0b0d0]">
+                  {mapData.filter(s => s.territory_id).length} assigned
+                </span>
+              )}
+              <MapPin size={14} className="text-[#7c6df5]" />
+            </div>
           </div>
         </div>
-        <StoreSvgMap stores={mapData} />
+        <StoreSvgMap stores={mapData} viewMode={mapViewMode} />
       </div>
 
       {/* Recent activity */}
