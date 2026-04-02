@@ -1,8 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
-import { Megaphone, Plus, ArrowRight } from 'lucide-react'
-import Badge from '@/components/ui/Badge'
+import { Megaphone, Plus } from 'lucide-react'
+import CampaignsClient from './CampaignsClient'
 
 interface Campaign {
   id: string
@@ -53,7 +53,7 @@ export default async function CampaignsPage() {
         </Link>
       </div>
 
-      {/* Empty state */}
+      {/* Empty state (no data at all) */}
       {rows.length === 0 ? (
         <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl flex flex-col items-center justify-center py-24 text-center">
           <div className="w-16 h-16 rounded-2xl bg-[#7c6df5]/10 border border-[#7c6df5]/20 flex items-center justify-center mb-5">
@@ -72,84 +72,7 @@ export default async function CampaignsPage() {
           </Link>
         </div>
       ) : (
-        <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl overflow-hidden">
-          {/* Table header */}
-          <div className="grid grid-cols-[2fr_1fr_110px_90px_90px_80px_60px] gap-4 px-6 py-3 border-b border-[#222240] text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">
-            <span>Campaign</span>
-            <span>Product</span>
-            <span>Status</span>
-            <span className="text-center">Stores</span>
-            <span className="text-center">Compliance</span>
-            <span>Created</span>
-            <span />
-          </div>
-
-          {/* Rows */}
-          <div className="divide-y divide-[#222240]">
-            {rows.map((c) => {
-              const storeCount = c.campaign_stores?.[0]?.count ?? 0
-              const created = new Date(c.created_at).toLocaleDateString('en-GB', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })
-              return (
-                <div
-                  key={c.id}
-                  className="grid grid-cols-[2fr_1fr_110px_90px_90px_80px_60px] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-colors"
-                >
-                  {/* Name */}
-                  <div className="min-w-0">
-                    <div className="font-semibold text-white truncate">{c.name}</div>
-                    {c.product_sku && (
-                      <div className="text-xs text-[#b0b0d0] mt-0.5">{c.product_sku}</div>
-                    )}
-                  </div>
-
-                  {/* Product */}
-                  <div className="text-sm text-[#b0b0d0] truncate">{c.product_name}</div>
-
-                  {/* Status badge */}
-                  <div>
-                    <Badge status={c.status} size="sm" />
-                  </div>
-
-                  {/* Store count */}
-                  <div className="text-center">
-                    <span className="text-white font-semibold">{storeCount}</span>
-                  </div>
-
-                  {/* Compliance */}
-                  <div className="text-center">
-                    {c.compliance_score !== null ? (
-                      <span
-                        className="font-bold"
-                        style={{ color: c.compliance_score >= 80 ? '#00e096' : c.compliance_score >= 60 ? '#ffc947' : '#ff6b9d' }}
-                      >
-                        {Math.round(c.compliance_score)}%
-                      </span>
-                    ) : (
-                      <span className="text-[#b0b0d0]">—</span>
-                    )}
-                  </div>
-
-                  {/* Date */}
-                  <div className="text-xs text-[#b0b0d0]">{created}</div>
-
-                  {/* View link */}
-                  <div className="flex justify-end">
-                    <Link
-                      href={`/campaigns/${c.id}`}
-                      className="flex items-center gap-1 text-[#7c6df5] hover:text-white text-sm font-medium transition-colors"
-                    >
-                      View <ArrowRight size={14} />
-                    </Link>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
+        <CampaignsClient campaigns={rows} />
       )}
     </div>
   )

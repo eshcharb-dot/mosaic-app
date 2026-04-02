@@ -1,7 +1,8 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, memo } from 'react'
+import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
-import { X, RefreshCw, CheckCircle, XCircle, Clock, Search, ChevronDown } from 'lucide-react'
+import { X, RefreshCw, CheckCircle, XCircle, Clock, Search, ChevronDown, SlidersHorizontal } from 'lucide-react'
 
 export interface Submission {
   id: string
@@ -20,6 +21,49 @@ interface Props {
 }
 
 type StatusFilter = 'all' | 'compliant' | 'non-compliant' | 'pending'
+type SortOrder = 'newest' | 'oldest' | 'score-desc' | 'score-asc'
+
+// Score range dual-thumb slider
+function ScoreRangeSlider({
+  min, max, onMinChange, onMaxChange,
+}: { min: number; max: number; onMinChange: (v: number) => void; onMaxChange: (v: number) => void }) {
+  const trackRef = useRef<HTMLDivElement>(null)
+  const pctLeft = min
+  const pctRight = max
+
+  return (
+    <div className="relative w-full">
+      {/* Track */}
+      <div ref={trackRef} className="relative h-1.5 rounded-full bg-[#222240] mx-1">
+        {/* Fill between thumbs */}
+        <div
+          className="absolute h-full rounded-full bg-[#7c6df5]"
+          style={{ left: `${pctLeft}%`, right: `${100 - pctRight}%` }}
+        />
+      </div>
+      {/* Min thumb */}
+      <input
+        type="range" min={0} max={100} step={1} value={min}
+        onChange={e => {
+          const v = Number(e.target.value)
+          if (v <= max) onMinChange(v)
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        style={{ zIndex: min > 90 ? 5 : 3 }}
+      />
+      {/* Max thumb */}
+      <input
+        type="range" min={0} max={100} step={1} value={max}
+        onChange={e => {
+          const v = Number(e.target.value)
+          if (v >= min) onMaxChange(v)
+        }}
+        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        style={{ zIndex: 4 }}
+      />
+    </div>
+  )
+}
 
 function relativeTime(iso: string | null): string {
   if (!iso) return '—'
@@ -135,11 +179,13 @@ function SubmissionModal({
 
         {/* Photo */}
         {sub.photo_url ? (
-          <div className="w-full aspect-video bg-[#030305] rounded-t-2xl overflow-hidden">
-            <img
+          <div className="relative w-full aspect-video bg-[#030305] rounded-t-2xl overflow-hidden">
+            <Image
               src={sub.photo_url}
               alt={sub.store_name ?? 'Submission'}
-              className="w-full h-full object-cover"
+              fill
+              className="object-cover"
+              unoptimized
             />
           </div>
         ) : (
@@ -223,7 +269,7 @@ function SubmissionModal({
   )
 }
 
-function SubmissionCard({
+const SubmissionCard = memo(function SubmissionCard({
   sub,
   onClick,
 }: {
@@ -246,10 +292,12 @@ function SubmissionCard({
       {/* Photo */}
       <div className="relative aspect-square overflow-hidden bg-[#030305]">
         {sub.photo_url ? (
-          <img
+          <Image
             src={sub.photo_url}
             alt={sub.store_name ?? 'Submission'}
-            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            fill
+            className="object-cover transition-transform duration-300 group-hover:scale-105"
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-[#b0b0d0] text-xs">
@@ -296,13 +344,42 @@ function SubmissionCard({
       </div>
     </div>
   )
-}
+})
 
 export default function GalleryClient({ submissions }: Props) {
   const [campaignFilter, setCampaignFilter] = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSub, setSelectedSub] = useState<Submission | null>(null)
+  // Advanced filters
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [scoreMin, setScoreMin] = useState(0)
+  const [scoreMax, setScoreMax] = useState(100)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
+  const [collectorFilter, setCollectorFilter] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
+  const isDefaultFilters =
+    campaignFilter === 'all' &&
+    statusFilter === 'all' &&
+    !searchQuery.trim() &&
+    !dateFrom && !dateTo &&
+    scoreMin === 0 && scoreMax === 100 &&
+    sortOrder === 'newest' &&
+    !collectorFilter.trim()
+
+  function clearAll() {
+    setCampaignFilter('all')
+    setStatusFilter('all')
+    setSearchQuery('')
+    setDateFrom('')
+    setDateTo('')
+    setScoreMin(0)
+    setScoreMax(100)
+    setSortOrder('newest')
+    setCollectorFilter('')
+  }
 
   const campaigns = useMemo(() => {
     const names = new Set<string>()
@@ -311,7 +388,7 @@ export default function GalleryClient({ submissions }: Props) {
   }, [submissions])
 
   const filtered = useMemo(() => {
-    return submissions.filter(s => {
+    let list = submissions.filter(s => {
       // Campaign
       if (campaignFilter !== 'all' && s.campaign_name !== campaignFilter) return false
       // Status
@@ -323,9 +400,45 @@ export default function GalleryClient({ submissions }: Props) {
         const q = searchQuery.toLowerCase()
         if (!(s.store_name ?? '').toLowerCase().includes(q)) return false
       }
+      // Date range
+      if (dateFrom && s.submitted_at) {
+        if (new Date(s.submitted_at) < new Date(dateFrom)) return false
+      }
+      if (dateTo && s.submitted_at) {
+        const to = new Date(dateTo)
+        to.setHours(23, 59, 59, 999)
+        if (new Date(s.submitted_at) > to) return false
+      }
+      // Score range (only filter scored submissions)
+      if (s.score !== null) {
+        if (s.score < scoreMin || s.score > scoreMax) return false
+      }
+      // Collector filter (anonymized prefix match on submission id)
+      if (collectorFilter.trim()) {
+        if (!s.id.toLowerCase().startsWith(collectorFilter.toLowerCase())) return false
+      }
       return true
     })
-  }, [submissions, campaignFilter, statusFilter, searchQuery])
+
+    // Sort
+    list = [...list].sort((a, b) => {
+      if (sortOrder === 'newest') {
+        return new Date(b.submitted_at ?? 0).getTime() - new Date(a.submitted_at ?? 0).getTime()
+      }
+      if (sortOrder === 'oldest') {
+        return new Date(a.submitted_at ?? 0).getTime() - new Date(b.submitted_at ?? 0).getTime()
+      }
+      if (sortOrder === 'score-desc') {
+        return (b.score ?? -1) - (a.score ?? -1)
+      }
+      if (sortOrder === 'score-asc') {
+        return (a.score ?? 101) - (b.score ?? 101)
+      }
+      return 0
+    })
+
+    return list
+  }, [submissions, campaignFilter, statusFilter, searchQuery, dateFrom, dateTo, scoreMin, scoreMax, sortOrder, collectorFilter])
 
   const statusCounts = useMemo(() => ({
     all: submissions.length,
@@ -350,36 +463,73 @@ export default function GalleryClient({ submissions }: Props) {
       </div>
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-3 mb-8">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px] max-w-xs">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
-          <input
-            type="text"
-            placeholder="Search by store…"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl pl-9 pr-4 py-2.5 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/50"
-          />
-        </div>
+      <div className="mb-8 space-y-3">
+        {/* Primary row */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            <input
+              type="text"
+              placeholder="Search by store…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl pl-9 pr-4 py-2.5 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/50"
+            />
+          </div>
 
-        {/* Campaign dropdown */}
-        <div className="relative">
-          <select
-            value={campaignFilter}
-            onChange={e => setCampaignFilter(e.target.value)}
-            className="appearance-none bg-[#0c0c18] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+          <div className="relative">
+            <select
+              value={campaignFilter}
+              onChange={e => setCampaignFilter(e.target.value)}
+              className="appearance-none bg-[#0c0c18] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+            >
+              <option value="all">All campaigns</option>
+              {campaigns.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+          </div>
+
+          <div className="relative">
+            <select
+              value={sortOrder}
+              onChange={e => setSortOrder(e.target.value as SortOrder)}
+              className="appearance-none bg-[#0c0c18] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="score-desc">Highest Score</option>
+              <option value="score-asc">Lowest Score</option>
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+          </div>
+
+          <button
+            onClick={() => setShowAdvanced(v => !v)}
+            className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border ${
+              showAdvanced
+                ? 'bg-[#7c6df5]/15 border-[#7c6df5]/40 text-[#a89cf7]'
+                : 'bg-[#0c0c18] border-[#222240] text-[#b0b0d0] hover:text-white'
+            }`}
           >
-            <option value="all">All campaigns</option>
-            {campaigns.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            <SlidersHorizontal size={14} />
+            Filters
+            {!isDefaultFilters && <span className="w-1.5 h-1.5 rounded-full bg-[#7c6df5]" />}
+          </button>
+
+          {!isDefaultFilters && (
+            <button
+              onClick={clearAll}
+              className="text-xs text-[#b0b0d0] hover:text-[#ff4d6d] transition-colors font-medium px-2"
+            >
+              Clear all
+            </button>
+          )}
         </div>
 
         {/* Status tabs */}
-        <div className="flex items-center gap-1 bg-[#0c0c18] border border-[#222240] rounded-xl p-1">
+        <div className="flex items-center gap-1 bg-[#0c0c18] border border-[#222240] rounded-xl p-1 w-fit">
           {(
             [
               { key: 'all', label: 'All' },
@@ -404,6 +554,59 @@ export default function GalleryClient({ submissions }: Props) {
             </button>
           ))}
         </div>
+
+        {/* Advanced filter panel */}
+        {showAdvanced && (
+          <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">From Date</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">To Date</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Score Range</label>
+                <span className="text-xs text-[#7c6df5] font-mono font-bold">{scoreMin}–{scoreMax}</span>
+              </div>
+              <div className="pt-2 pb-1">
+                <ScoreRangeSlider
+                  min={scoreMin} max={scoreMax}
+                  onMinChange={setScoreMin} onMaxChange={setScoreMax}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-[#b0b0d0]/50">
+                <span>0</span><span>100</span>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Collector ID</label>
+              <input
+                type="text"
+                value={collectorFilter}
+                onChange={e => setCollectorFilter(e.target.value)}
+                placeholder="ID prefix…"
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/40 font-mono"
+              />
+              <p className="text-[10px] text-[#b0b0d0]/40">Anonymized submission ID prefix</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Grid */}
@@ -432,7 +635,7 @@ export default function GalleryClient({ submissions }: Props) {
               <p className="text-white font-semibold text-lg">No matches</p>
               <p className="text-[#b0b0d0] text-sm mt-1">Try adjusting your filters.</p>
               <button
-                onClick={() => { setCampaignFilter('all'); setStatusFilter('all'); setSearchQuery('') }}
+                onClick={clearAll}
                 className="mt-4 text-[#7c6df5] text-sm font-semibold hover:underline"
               >
                 Clear filters

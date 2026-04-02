@@ -55,10 +55,10 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 2. Fetch campaign for context
+    // 2. Fetch campaign for context + org_id for webhook dispatch
     const { data: campaign } = await supabase
       .from("campaigns")
-      .select("name, brief")
+      .select("name, brief, organization_id")
       .eq("id", submission.campaign_id)
       .single();
 
@@ -161,7 +161,36 @@ Deno.serve(async (req: Request) => {
         .eq("id", submission.task_id);
     }
 
-    // 7. Create alert if score < 70
+    // 7. Fire webhooks for compliance events
+    const orgId = campaign?.organization_id
+    if (orgId) {
+      const eventType = is_compliant ? "compliance.scored" : "compliance.failed"
+      const { data: activeWebhooks } = await supabase
+        .from("webhooks")
+        .select("id, events")
+        .eq("org_id", orgId)
+        .eq("is_active", true)
+
+      for (const wh of activeWebhooks ?? []) {
+        if ((wh.events as string[]).includes(eventType)) {
+          await supabase.functions.invoke("deliver-webhook", {
+            body: {
+              webhook_id: wh.id,
+              event_type: eventType,
+              payload: {
+                submission_id: submission.id,
+                score,
+                is_compliant,
+                campaign_id: submission.campaign_id,
+                store_id: submission.store_id,
+              },
+            },
+          })
+        }
+      }
+    }
+
+    // 8. Create alert if score < 70
     if (score < 70) {
       const severity = score < 50 ? "critical" : "warning";
       const message = `Compliance score ${score}/100 — ${summary}`;

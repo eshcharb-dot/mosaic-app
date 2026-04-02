@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
+import CommandPaletteProvider from '@/components/CommandPaletteProvider'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -8,9 +9,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!user) redirect('/login')
 
   return (
-    <div className="flex min-h-screen bg-[#030305]">
-      <Sidebar user={user} />
-      <main className="flex-1 overflow-auto">{children}</main>
-    </div>
+    <CommandPaletteProvider>
+      <div className="flex min-h-screen bg-[#030305]">
+        <Sidebar user={user} />
+        <main className="flex-1 overflow-auto">{children}</main>
+      </div>
+    </CommandPaletteProvider>
   )
 }

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, memo } from 'react'
 import { TrendingUp, Store, CheckCircle, AlertTriangle, Clock, BarChart3, MapPin } from 'lucide-react'
 import {
   LineChart,
@@ -38,7 +38,7 @@ interface Props {
 }
 
 // Custom tooltip for the line chart
-function ChartTooltip({ active, payload, label }: any) {
+const ChartTooltip = memo(function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload as TrendPoint
   return (
@@ -48,10 +48,10 @@ function ChartTooltip({ active, payload, label }: any) {
       <div className="text-[#7c6df5]">{d?.compliant ?? 0} / {d?.total ?? 0} compliant</div>
     </div>
   )
-}
+})
 
 // SVG Store Map — positions dots from lat/lng normalized to bounding box
-function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
+const StoreSvgMap = memo(function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
   const W = 800
   const H = 340
   const PAD = 32
@@ -131,7 +131,7 @@ function StoreSvgMap({ stores }: { stores: StoreMapPoint[] }) {
       )}
     </svg>
   )
-}
+})
 
 // Pulsing live dot
 function LiveDot({ connected }: { connected: boolean }) {

@@ -1,6 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -35,7 +35,12 @@ export default function Sidebar({ user }: { user: any }) {
           </div>
           <span className="font-black text-white text-xl tracking-tight">Mosaic</span>
         </div>
-        <div className="mt-1 text-xs text-[#b0b0d0]">Enterprise Portal</div>
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs text-[#b0b0d0]">Enterprise Portal</span>
+          <kbd className="flex items-center gap-0.5 px-1.5 py-0.5 bg-[#222240] border border-[#333360] rounded text-[10px] text-[#b0b0d0] font-mono cursor-pointer hover:text-white hover:border-[#7c6df5]/50 transition-colors select-none">
+            ⌘K
+          </kbd>
+        </div>
       </div>
 
       {/* Nav */}
@@ -82,21 +87,35 @@ export default function Sidebar({ user }: { user: any }) {
 
       {/* Settings */}
       <div className="px-4 pb-2">
-        {(() => {
-          const href = '/settings/team'
-          const active = pathname === href || pathname.startsWith(href + '/')
-          return (
-            <a href={href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${
-                active
-                  ? 'bg-[#7c6df5]/15 text-white border border-[#7c6df5]/30'
-                  : 'text-[#b0b0d0] hover:text-white hover:bg-white/5'
-              }`}>
-              <Settings size={18} />
-              <span className="flex-1">Settings</span>
-            </a>
-          )
-        })()}
+        {/* Settings parent label */}
+        <div className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-[#b0b0d0]">
+          <Settings size={18} />
+          <span className="flex-1">Settings</span>
+        </div>
+        {/* Team sub-item */}
+        <a
+          href="/settings/team"
+          className={`flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5 ${
+            pathname === '/settings/team' || pathname.startsWith('/settings/team/')
+              ? 'text-[#a89cf7] bg-[#7c6df5]/10'
+              : 'text-[#b0b0d0] hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Users size={13} />
+          Team
+        </a>
+        {/* Webhooks sub-item */}
+        <a
+          href="/settings/webhooks"
+          className={`flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5 ${
+            pathname === '/settings/webhooks' || pathname.startsWith('/settings/webhooks/')
+              ? 'text-[#a89cf7] bg-[#7c6df5]/10'
+              : 'text-[#b0b0d0] hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Webhook size={13} />
+          Webhooks
+        </a>
       </div>
 
       {/* User */}

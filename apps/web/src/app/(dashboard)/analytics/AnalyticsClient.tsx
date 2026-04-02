@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { TrendingUp, BarChart3, AlertTriangle, Trophy } from 'lucide-react'
 import {
   BarChart,
@@ -96,7 +96,7 @@ function SectionCard({ title, subtitle, icon: Icon, children }: {
   )
 }
 
-function DistributionTooltip({ active, payload, label }: any) {
+const DistributionTooltip = memo(function DistributionTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
@@ -104,9 +104,9 @@ function DistributionTooltip({ active, payload, label }: any) {
       <div className="text-white font-bold text-sm">{payload[0].value} stores</div>
     </div>
   )
-}
+})
 
-function TrendTooltip({ active, payload, label }: any) {
+const TrendTooltip = memo(function TrendTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload as TrendPoint
   return (
@@ -116,9 +116,9 @@ function TrendTooltip({ active, payload, label }: any) {
       <div className="text-[#7c6df5]">{d?.compliant ?? 0} / {d?.total ?? 0} compliant</div>
     </div>
   )
-}
+})
 
-function CampaignTooltip({ active, payload, label }: any) {
+const CampaignTooltip = memo(function CampaignTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
     <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
@@ -130,9 +130,9 @@ function CampaignTooltip({ active, payload, label }: any) {
       ))}
     </div>
   )
-}
+})
 
-function StoresTable({ stores, mode }: { stores: StoreRow[]; mode: 'top' | 'bottom' }) {
+const StoresTable = memo(function StoresTable({ stores, mode }: { stores: StoreRow[]; mode: 'top' | 'bottom' }) {
   if (stores.length === 0) {
     return (
       <div className="text-center py-10 text-[#b0b0d0] text-sm">No data available yet</div>
@@ -179,7 +179,7 @@ function StoresTable({ stores, mode }: { stores: StoreRow[]; mode: 'top' | 'bott
       })}
     </div>
   )
-}
+})
 
 // ── Main component ───────────────────────────────────────────────────────────
 
