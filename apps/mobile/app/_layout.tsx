@@ -15,6 +15,8 @@ export default function RootLayout() {
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#030305' } }}>
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="task/[id]" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="capture/[taskId]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+      <Stack.Screen name="capture/success" options={{ presentation: 'modal', gestureEnabled: false }} />
       <Stack.Screen name="auth" />
     </Stack>
   )
