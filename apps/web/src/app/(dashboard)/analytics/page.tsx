@@ -36,11 +36,12 @@ export default async function AnalyticsPage() {
 
   const firstCampaignId = campaigns?.[0]?.id ?? null
 
-  const [analyticsRes, trendRes] = await Promise.all([
+  const [analyticsRes, trendRes, tierDistRes] = await Promise.all([
     supabase.rpc('get_analytics_data', { p_org_id: orgId }),
     firstCampaignId
       ? supabase.rpc('get_compliance_trend', { campaign_id: firstCampaignId })
       : Promise.resolve({ data: [] }),
+    supabase.rpc('get_tier_distribution', { p_org_id: orgId }),
   ])
 
   const analytics = analyticsRes.data ?? {}
@@ -52,6 +53,7 @@ export default async function AnalyticsPage() {
       bottomStores={analytics.bottom_stores ?? []}
       campaignComparison={analytics.campaign_comparison ?? []}
       trend={(trendRes as any).data ?? []}
+      tierDistribution={(tierDistRes as any).data ?? []}
     />
   )
 }

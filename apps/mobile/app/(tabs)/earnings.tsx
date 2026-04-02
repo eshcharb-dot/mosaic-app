@@ -36,6 +36,41 @@ type MyRank = {
   percentile: number
 }
 
+// ── Tier helpers ──────────────────────────────────────────────────────────────
+
+const TIER_COLORS: Record<string, string> = {
+  bronze: '#cd7f32',
+  silver: '#c0c0c0',
+  gold:   '#ffd700',
+  elite:  '#7c6df5',
+}
+
+function TierPill({ tier }: { tier: string | null }) {
+  if (!tier) return null
+  const color = TIER_COLORS[tier] ?? '#b0b0d0'
+  const label = tier.charAt(0).toUpperCase() + tier.slice(1)
+  return (
+    <View style={[tp.pill, { borderColor: color + '55', backgroundColor: color + '18' }]}>
+      <View style={[tp.dot, { backgroundColor: color }]} />
+      <Text style={[tp.text, { color }]}>{label}</Text>
+    </View>
+  )
+}
+
+const tp = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  text: { fontSize: 12, fontWeight: '700' },
+})
+
 // ── Status badge colours ───────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
@@ -111,6 +146,7 @@ export default function EarningsScreen() {
   const [earnings, setEarnings] = useState<Earnings | null>(null)
   const [history, setHistory] = useState<TaskHistoryItem[]>([])
   const [myRank, setMyRank] = useState<MyRank | null | undefined>(undefined) // undefined = loading
+  const [collectorTier, setCollectorTier] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [payoutLoading, setPayoutLoading] = useState(false)
@@ -125,10 +161,11 @@ export default function EarningsScreen() {
       return
     }
 
-    const [earningsRes, historyRes, rankRes] = await Promise.all([
+    const [earningsRes, historyRes, rankRes, profileRes] = await Promise.all([
       supabase.rpc('get_collector_earnings', { collector_id: user.id }),
       supabase.rpc('get_collector_task_history', { collector_id: user.id, limit_n: 20 }),
       supabase.rpc('get_my_rank', { p_collector_id: user.id }),
+      supabase.from('profiles').select('collector_tier').eq('id', user.id).single(),
     ])
 
     setEarnings(
@@ -138,6 +175,7 @@ export default function EarningsScreen() {
     // get_my_rank returns an array of rows; first row is the result
     const rankRow = Array.isArray(rankRes.data) ? rankRes.data[0] : rankRes.data
     setMyRank(rankRow ?? null)
+    setCollectorTier(profileRes.data?.collector_tier ?? null)
     setLoading(false)
     setRefreshing(false)
   }, [])
@@ -182,7 +220,10 @@ export default function EarningsScreen() {
     <View style={s.container}>
       {/* Header */}
       <View style={s.header}>
-        <Text style={s.headerTitle}>Earnings</Text>
+        <View style={s.headerLeft}>
+          <Text style={s.headerTitle}>Earnings</Text>
+          <TierPill tier={collectorTier} />
+        </View>
         <View style={s.headerRight}>
           <TrendingUp size={20} color="#7c6df5" />
           <TouchableOpacity onPress={() => router.push('/(tabs)/profile')} style={s.gearBtn} hitSlop={12}>
@@ -301,6 +342,7 @@ const s = StyleSheet.create({
     borderBottomColor: '#222240',
   },
   headerTitle: { fontSize: 28, fontWeight: '900', color: '#ffffff', letterSpacing: -0.5 },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   headerRight: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   gearBtn: { padding: 4 },
 

@@ -8,12 +8,10 @@ const corsHeaders = {
 };
 
 Deno.serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
-  // Basic auth guard — require Authorization header
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     return new Response(
@@ -37,7 +35,6 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const openaiKey = Deno.env.get("OPENAI_API_KEY")!;
-
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
@@ -62,9 +59,29 @@ Deno.serve(async (req: Request) => {
       .eq("id", submission.campaign_id)
       .single();
 
+    // 3. Fetch compliance rules for this campaign
+    const { data: rulesData } = await supabase
+      .from("compliance_rules")
+      .select("rule_type, description, weight, is_blocking")
+      .eq("campaign_id", submission.campaign_id)
+      .order("created_at", { ascending: true });
+
+    const rules: Array<{ rule_type: string; description: string; weight: number; is_blocking: boolean }> = rulesData ?? [];
+
+    const rulesText = rules.map(r => {
+      const prefix = r.is_blocking ? "[BLOCKING] " : `[${r.weight}%] `;
+      return `${prefix}${r.rule_type.toUpperCase()}: ${r.description}`;
+    }).join("\n");
+
     const campaignContext = campaign?.brief
       ? `Campaign: "${campaign.name}". Compliance criteria: ${campaign.brief}`
       : `Campaign: "${campaign?.name ?? "Unknown"}". Score overall shelf compliance.`;
+
+    const systemPrompt = `You are a shelf compliance auditor. Score this retail shelf photo.
+
+${rules.length > 0 ? `COMPLIANCE RULES FOR THIS CAMPAIGN:\n${rulesText}\n\nScore based on these rules. Blocking rules that fail make is_compliant=false regardless of score.` : ""}
+
+Return JSON: { score: 0-100, is_compliant: boolean, findings: string[], summary: string }`;
 
     // Use the first photo URL; submissions stores an array
     const photoUrl: string | null =
@@ -79,7 +96,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Call GPT-4o Vision
+    // 4. Call GPT-4o Vision
     const openaiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -90,21 +107,15 @@ Deno.serve(async (req: Request) => {
         model: "gpt-4o",
         response_format: { type: "json_object" },
         messages: [
-          {
-            role: "system",
-            content: "You are a shelf compliance auditor. Score this retail shelf photo.",
-          },
+          { role: "system", content: systemPrompt },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: `${campaignContext}\n\nAnalyze the shelf photo and respond with valid JSON matching exactly this shape:\n{\n  "score": <integer 0-100>,\n  "is_compliant": <boolean, true if score >= 70>,\n  "findings": <string array of specific observations>,\n  "summary": <one sentence summary>\n}`,
+                text: `${campaignContext}\n\nAnalyze the shelf photo and respond with valid JSON matching exactly this shape:\n{\n  "score": <integer 0-100>,\n  "is_compliant": <boolean, true if score >= 70 and no blocking rules violated>,\n  "findings": <string array of specific observations>,\n  "summary": <one sentence summary>\n}`,
               },
-              {
-                type: "image_url",
-                image_url: { url: photoUrl, detail: "high" },
-              },
+              { type: "image_url", image_url: { url: photoUrl, detail: "high" } },
             ],
           },
         ],
@@ -128,11 +139,12 @@ Deno.serve(async (req: Request) => {
     }
 
     const score = Math.max(0, Math.min(100, Math.round(Number(parsed.score))));
-    const is_compliant = score >= 70;
+    // Honour GPT's is_compliant (respects blocking rules) but also enforce score threshold
+    const is_compliant = typeof parsed.is_compliant === "boolean" ? parsed.is_compliant && score >= 70 : score >= 70;
     const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
     const summary = typeof parsed.summary === "string" ? parsed.summary : "";
 
-    // 4. Write compliance_results
+    // 5. Write compliance_results
     const { error: crErr } = await supabase.from("compliance_results").insert({
       submission_id: submission.id,
       campaign_id: submission.campaign_id,
@@ -147,29 +159,23 @@ Deno.serve(async (req: Request) => {
 
     if (crErr) throw new Error(`Failed to write compliance_results: ${crErr.message}`);
 
-    // 5. Update submissions.status → 'scored'
-    await supabase
-      .from("submissions")
-      .update({ status: "scored" })
-      .eq("id", submission.id);
+    // 6. Update submissions.status -> 'scored'
+    await supabase.from("submissions").update({ status: "scored" }).eq("id", submission.id);
 
-    // 6. Update tasks.status → 'scored'
+    // 7. Update tasks.status -> 'scored'
     if (submission.task_id) {
-      await supabase
-        .from("tasks")
-        .update({ status: "scored" })
-        .eq("id", submission.task_id);
+      await supabase.from("tasks").update({ status: "scored" }).eq("id", submission.task_id);
     }
 
-    // 7. Fire webhooks for compliance events
-    const orgId = campaign?.organization_id
+    // 8. Fire webhooks for compliance events
+    const orgId = campaign?.organization_id;
     if (orgId) {
-      const eventType = is_compliant ? "compliance.scored" : "compliance.failed"
+      const eventType = is_compliant ? "compliance.scored" : "compliance.failed";
       const { data: activeWebhooks } = await supabase
         .from("webhooks")
         .select("id, events")
         .eq("org_id", orgId)
-        .eq("is_active", true)
+        .eq("is_active", true);
 
       for (const wh of activeWebhooks ?? []) {
         if ((wh.events as string[]).includes(eventType)) {
@@ -185,16 +191,15 @@ Deno.serve(async (req: Request) => {
                 store_id: submission.store_id,
               },
             },
-          })
+          });
         }
       }
     }
 
-    // 8. Create alert if score < 70
+    // 9. Create alert if score < 70
     if (score < 70) {
       const severity = score < 50 ? "critical" : "warning";
       const message = `Compliance score ${score}/100 — ${summary}`;
-
       await supabase.from("alert_events").insert({
         store_id: submission.store_id,
         payload: {

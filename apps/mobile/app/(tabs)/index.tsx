@@ -7,6 +7,24 @@ import { supabase } from '../../lib/supabase'
 import { getPendingSyncTaskIds } from '../../lib/offlineQueue'
 import type { Task } from '@mosaic/types'
 
+// ── Tier helpers ──────────────────────────────────────────────────────────────
+
+const TIER_MULTIPLIERS: Record<string, number> = {
+  bronze: 1.0,
+  silver: 1.1,
+  gold:   1.25,
+  elite:  1.5,
+}
+
+const TIER_COLORS: Record<string, string> = {
+  bronze: '#cd7f32',
+  silver: '#c0c0c0',
+  gold:   '#ffd700',
+  elite:  '#7c6df5',
+}
+
+// ── Distance helpers ──────────────────────────────────────────────────────────
+
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -31,6 +49,7 @@ export default function TaskFeedScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null)
   const [pendingSyncIds, setPendingSyncIds] = useState<Set<string>>(new Set())
+  const [collectorTier, setCollectorTier] = useState<string | null>(null)
   const router = useRouter()
 
   // Request location silently — no blocker if denied
@@ -52,6 +71,20 @@ export default function TaskFeedScreen() {
       } catch {
         // AsyncStorage unavailable — no badges
       }
+    })()
+  }, [])
+
+  // Load collector tier from profile
+  useEffect(() => {
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('profiles')
+        .select('collector_tier')
+        .eq('id', user.id)
+        .single()
+      if (data?.collector_tier) setCollectorTier(data.collector_tier)
     })()
   }, [])
 
@@ -90,6 +123,16 @@ export default function TaskFeedScreen() {
       })
     : tasks
 
+  // Payout with tier multiplier applied
+  function formatPayout(payout_cents: number): { base: string; boosted: string | null; tierLabel: string | null } {
+    const base = (payout_cents / 100).toFixed(2)
+    const multiplier = TIER_MULTIPLIERS[collectorTier ?? 'bronze'] ?? 1.0
+    if (multiplier <= 1.0) return { base, boosted: null, tierLabel: null }
+    const boosted = ((payout_cents / 100) * multiplier).toFixed(2)
+    const tierLabel = collectorTier ? collectorTier.charAt(0).toUpperCase() + collectorTier.slice(1) : null
+    return { base, boosted, tierLabel }
+  }
+
   if (loading) return (
     <View style={s.center}><ActivityIndicator color="#7c6df5" size="large" /></View>
   )
@@ -119,11 +162,12 @@ export default function TaskFeedScreen() {
           renderItem={({ item: task }) => {
             const store = (task as any).stores
             const campaign = (task as any).campaigns
-            const payout = (task.payout_cents / 100).toFixed(2)
+            const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
             const dist = userLoc && store?.lat && store?.lng
               ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
               : null
             const isPendingSync = pendingSyncIds.has(task.id)
+            const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
             return (
               <TouchableOpacity style={s.card} onPress={() => router.push(`/task/${task.id}`)}>
                 <View style={s.cardTop}>
@@ -139,9 +183,26 @@ export default function TaskFeedScreen() {
                     <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
                   </View>
                   <View style={s.cardTopRight}>
+                    {/* Payout badge — show boost if silver+ */}
                     <View style={s.payoutBadge}>
-                      <Text style={s.payoutText}>£{payout}</Text>
+                      {boosted ? (
+                        <>
+                          <Text style={s.payoutTextStrike}>£{base}</Text>
+                          <Text style={[s.payoutTextBoosted, { color: tierColor ?? '#00e096' }]}>
+                            £{boosted}
+                          </Text>
+                        </>
+                      ) : (
+                        <Text style={s.payoutText}>£{base}</Text>
+                      )}
                     </View>
+                    {boosted && tierLabel && (
+                      <View style={[s.tierBoostBadge, { borderColor: (tierColor ?? '#c0c0c0') + '55', backgroundColor: (tierColor ?? '#c0c0c0') + '18' }]}>
+                        <Text style={[s.tierBoostText, { color: tierColor ?? '#c0c0c0' }]}>
+                          {tierLabel} bonus
+                        </Text>
+                      </View>
+                    )}
                     {dist !== null && (
                       <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
                         <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
@@ -192,8 +253,12 @@ const s = StyleSheet.create({
   offlineBadge: { backgroundColor: 'rgba(255,160,64,0.12)', borderWidth: 1, borderColor: 'rgba(255,160,64,0.4)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
   offlineBadgeText: { fontSize: 11, fontWeight: '700', color: '#ffa040' },
   productName: { fontSize: 14, color: '#b0b0d0' },
-  payoutBadge: { backgroundColor: 'rgba(0,224,150,0.12)', borderWidth: 1, borderColor: 'rgba(0,224,150,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
+  payoutBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(0,224,150,0.12)', borderWidth: 1, borderColor: 'rgba(0,224,150,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
   payoutText: { fontSize: 18, fontWeight: '900', color: '#00e096' },
+  payoutTextStrike: { fontSize: 13, fontWeight: '700', color: '#b0b0d0', textDecorationLine: 'line-through' },
+  payoutTextBoosted: { fontSize: 18, fontWeight: '900' },
+  tierBoostBadge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  tierBoostText: { fontSize: 10, fontWeight: '700' },
   distBadge: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 },
   distText: { fontSize: 12, fontWeight: '700' },
   cardMeta: { flexDirection: 'row', gap: 14 },

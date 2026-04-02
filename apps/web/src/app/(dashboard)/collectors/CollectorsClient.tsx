@@ -11,14 +11,46 @@ type LeaderboardRow = {
   avg_score: number
   total_earned_pence: number
   acceptance_rate: number
+  collector_tier?: string | null
 }
 
 type Period = 'all_time' | 'month' | 'week'
+type TierFilter = 'all' | 'bronze' | 'silver' | 'gold' | 'elite'
 
 const PERIOD_LABELS: Record<Period, string> = {
   all_time: 'All Time',
   month: 'This Month',
   week: 'This Week',
+}
+
+const TIER_COLORS: Record<string, string> = {
+  bronze: '#cd7f32',
+  silver: '#c0c0c0',
+  gold:   '#ffd700',
+  elite:  '#7c6df5',
+}
+
+const TIER_FILTERS: { id: TierFilter; label: string }[] = [
+  { id: 'all',    label: 'All' },
+  { id: 'elite',  label: 'Elite' },
+  { id: 'gold',   label: 'Gold' },
+  { id: 'silver', label: 'Silver' },
+  { id: 'bronze', label: 'Bronze' },
+]
+
+function TierDot({ tier }: { tier: string | null | undefined }) {
+  if (!tier) return null
+  const color = TIER_COLORS[tier] ?? '#b0b0d0'
+  const label = tier.charAt(0).toUpperCase() + tier.slice(1)
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+        style={{ backgroundColor: color }}
+      />
+      <span className="text-sm font-semibold" style={{ color }}>{label}</span>
+    </span>
+  )
 }
 
 function RankBadge({ rank }: { rank: number }) {
@@ -64,6 +96,7 @@ export default function CollectorsClient({
   const [period, setPeriod] = useState<Period>('all_time')
   const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>(initialLeaderboard)
   const [loading, setLoading] = useState(false)
+  const [tierFilter, setTierFilter] = useState<TierFilter>('all')
 
   useEffect(() => {
     if (period === 'all_time' && leaderboard === initialLeaderboard) return
@@ -76,6 +109,11 @@ export default function CollectorsClient({
         setLoading(false)
       })
   }, [period]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Client-side tier filter
+  const filtered = tierFilter === 'all'
+    ? leaderboard
+    : leaderboard.filter(r => (r.collector_tier ?? 'bronze') === tierFilter)
 
   const maxTasks = Math.max(...leaderboard.map(r => r.tasks_completed), 1)
   const totalCollectors = leaderboard.length
@@ -115,7 +153,7 @@ export default function CollectorsClient({
       </div>
 
       {/* Period tabs */}
-      <div className="flex gap-1 mb-6 bg-[#0c0c18] border border-[#222240] rounded-xl p-1 w-fit">
+      <div className="flex gap-1 mb-4 bg-[#0c0c18] border border-[#222240] rounded-xl p-1 w-fit">
         {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
           <button
             key={p}
@@ -131,14 +169,44 @@ export default function CollectorsClient({
         ))}
       </div>
 
+      {/* Tier filter pills */}
+      <div className="flex items-center gap-2 mb-6 flex-wrap">
+        {TIER_FILTERS.map(({ id, label }) => {
+          const color = id === 'all' ? '#7c6df5' : TIER_COLORS[id]
+          const isActive = tierFilter === id
+          return (
+            <button
+              key={id}
+              onClick={() => setTierFilter(id)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all"
+              style={{
+                borderColor: isActive ? color : color + '40',
+                backgroundColor: isActive ? color + '22' : 'transparent',
+                color: isActive ? color : color + 'aa',
+              }}
+            >
+              {id !== 'all' && (
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+              )}
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
       {/* Table */}
       <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center h-40 text-[#b0b0d0]">Loading…</div>
-        ) : leaderboard.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2">
             <Trophy size={32} className="text-[#222240]" />
-            <span className="text-[#b0b0d0] text-sm">No scored submissions yet</span>
+            <span className="text-[#b0b0d0] text-sm">
+              {tierFilter === 'all' ? 'No scored submissions yet' : `No ${tierFilter} tier collectors`}
+            </span>
           </div>
         ) : (
           <table className="w-full">
@@ -146,13 +214,14 @@ export default function CollectorsClient({
               <tr className="border-b border-[#222240]">
                 <th className="text-left px-6 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider w-16">Rank</th>
                 <th className="text-left px-4 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Collector</th>
+                <th className="text-left px-4 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Tier</th>
                 <th className="text-left px-4 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Tasks</th>
                 <th className="text-left px-4 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Avg Score</th>
                 <th className="text-right px-6 py-4 text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Earned</th>
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map((row, i) => (
+              {filtered.map((row, i) => (
                 <tr
                   key={row.collector_id}
                   className={`border-b border-[#222240]/50 last:border-0 transition-colors hover:bg-white/[0.02] ${
@@ -164,6 +233,9 @@ export default function CollectorsClient({
                   </td>
                   <td className="px-4 py-4">
                     <span className="text-white font-semibold text-sm">{row.display_name}</span>
+                  </td>
+                  <td className="px-4 py-4">
+                    <TierDot tier={row.collector_tier} />
                   </td>
                   <td className="px-4 py-4">
                     <TaskBar value={row.tasks_completed} max={maxTasks} />

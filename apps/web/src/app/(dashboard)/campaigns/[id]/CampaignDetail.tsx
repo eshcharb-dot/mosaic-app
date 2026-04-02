@@ -4,10 +4,69 @@ import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2 } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2, Plus, AlertTriangle, Shield, ShieldAlert } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import Checkbox from '@/components/ui/Checkbox'
 import StoreUpload from './StoreUpload'
+
+// ─── Compliance Rules Types ───────────────────────────────────────────────────
+
+type RuleType = 'must_have' | 'must_not_have' | 'count_check' | 'position_check' | 'label_check'
+
+interface ComplianceRule {
+  id: string
+  campaign_id: string
+  rule_type: RuleType
+  description: string
+  weight: number
+  is_blocking: boolean
+  created_at: string
+}
+
+const RULE_TYPE_LABELS: Record<RuleType, string> = {
+  must_have: 'Must Have',
+  must_not_have: 'Must Not Have',
+  count_check: 'Count Check',
+  position_check: 'Position Check',
+  label_check: 'Label Check',
+}
+
+const RULE_TYPE_COLORS: Record<RuleType, { bg: string; border: string; text: string }> = {
+  must_have:     { bg: '#00e09615', border: '#00e09640', text: '#00e096' },
+  must_not_have: { bg: '#ff6b9d15', border: '#ff6b9d40', text: '#ff6b9d' },
+  count_check:   { bg: '#ffc94715', border: '#ffc94740', text: '#ffc947' },
+  position_check:{ bg: '#00d4d415', border: '#00d4d440', text: '#00d4d4' },
+  label_check:   { bg: '#7c6df515', border: '#7c6df540', text: '#a89cf7' },
+}
+
+const RULE_TYPE_PLACEHOLDERS: Record<RuleType, string> = {
+  must_have:     'e.g. Product X must be on shelf',
+  must_not_have: 'e.g. No competitor products in display',
+  count_check:   'e.g. At least 4 units visible',
+  position_check:'e.g. Product at eye level (shelves 2-4)',
+  label_check:   'e.g. Price label visible and correct',
+}
+
+const RULE_PRESETS: Record<string, Array<{ rule_type: RuleType; description: string; weight: number; is_blocking?: boolean }>> = {
+  'FMCG Standard': [
+    { rule_type: 'must_have',      description: 'All product variants present on shelf', weight: 25 },
+    { rule_type: 'count_check',    description: 'Minimum 3 facings per SKU', weight: 20 },
+    { rule_type: 'label_check',    description: 'Price label visible and correct', weight: 20 },
+    { rule_type: 'position_check', description: 'Product at eye level (shelves 2-4)', weight: 20 },
+    { rule_type: 'must_not_have',  description: 'No out-of-stock gaps in display', weight: 15 },
+  ],
+  'Promotional Display': [
+    { rule_type: 'must_have',      description: 'Promotional POS material visible', weight: 30, is_blocking: true },
+    { rule_type: 'position_check', description: 'Display placed at store entrance or end-cap', weight: 30 },
+    { rule_type: 'count_check',    description: 'Minimum 6 promotional units stocked', weight: 25 },
+    { rule_type: 'label_check',    description: 'Promotional price clearly marked', weight: 15 },
+  ],
+  'Cold Chain': [
+    { rule_type: 'must_have',      description: 'Product stored in refrigerated unit (0-4°C)', weight: 40, is_blocking: true },
+    { rule_type: 'must_not_have',  description: 'No products placed outside refrigeration', weight: 35, is_blocking: true },
+    { rule_type: 'label_check',    description: 'Best-before date visible and within range', weight: 25 },
+  ],
+}
 
 interface StoreRow {
   id: string
@@ -84,8 +143,92 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [saving, setSaving] = useState(false)
   const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
 
+  // Compliance rules state
+  const [rules, setRules] = useState<ComplianceRule[]>([])
+  const [rulesLoading, setRulesLoading] = useState(false)
+  const [newRuleType, setNewRuleType] = useState<RuleType>('must_have')
+  const [newRuleDesc, setNewRuleDesc] = useState('')
+  const [newRuleWeight, setNewRuleWeight] = useState(20)
+  const [newRuleBlocking, setNewRuleBlocking] = useState(false)
+  const [addingRule, setAddingRule] = useState(false)
+  const [addRuleError, setAddRuleError] = useState<string | null>(null)
+  const [selectedPreset, setSelectedPreset] = useState('')
+
   const router = useRouter()
   const supabase = createClient()
+
+  async function fetchRules() {
+    setRulesLoading(true)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/rules`)
+      if (res.ok) {
+        const json = await res.json()
+        setRules(json.rules ?? [])
+      }
+    } finally {
+      setRulesLoading(false)
+    }
+  }
+
+  async function handleAddRule() {
+    if (!newRuleDesc.trim()) { setAddRuleError('Description is required'); return }
+    setAddingRule(true)
+    setAddRuleError(null)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/rules`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rule_type: newRuleType,
+          description: newRuleDesc.trim(),
+          weight: newRuleWeight,
+          is_blocking: newRuleBlocking,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setAddRuleError(json.error ?? 'Failed to add rule')
+      } else {
+        setRules(prev => [...prev, json.rule])
+        setNewRuleDesc('')
+        setNewRuleWeight(20)
+        setNewRuleBlocking(false)
+        setSelectedPreset('')
+      }
+    } catch {
+      setAddRuleError('Network error')
+    } finally {
+      setAddingRule(false)
+    }
+  }
+
+  async function handleDeleteRule(ruleId: string) {
+    const res = await fetch(`/api/campaigns/${campaign.id}/rules/${ruleId}`, { method: 'DELETE' })
+    if (res.ok) setRules(prev => prev.filter(r => r.id !== ruleId))
+  }
+
+  async function handleToggleBlocking(rule: ComplianceRule) {
+    const res = await fetch(`/api/campaigns/${campaign.id}/rules/${rule.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_blocking: !rule.is_blocking }),
+    })
+    if (res.ok) {
+      const json = await res.json()
+      setRules(prev => prev.map(r => r.id === rule.id ? json.rule : r))
+    }
+  }
+
+  function applyPreset(presetName: string) {
+    const presets = RULE_PRESETS[presetName]
+    if (!presets || presets.length === 0) return
+    const first = presets[0]
+    setNewRuleType(first.rule_type)
+    setNewRuleDesc(first.description)
+    setNewRuleWeight(first.weight)
+    setNewRuleBlocking(first.is_blocking ?? false)
+    setSelectedPreset(presetName)
+  }
 
   const { rows: liveSubmissions } = useRealtimeTable<{ id: string }>(
     'submissions',
@@ -125,9 +268,11 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     setStoreBulkResult(null)
   }
 
-  // Tab change clears selection
+  // Tab change clears selection; fetch rules when settings tab opens
   useEffect(() => {
     clearStoreSelection()
+    if (activeTab === 'settings') fetchRules()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
 
   // Escape clears store selection when in stores tab
@@ -606,82 +751,341 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
 
       {/* Tab: Settings */}
       {activeTab === 'settings' && (
-        <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="font-bold text-white text-lg">Campaign Settings</h2>
-            <div className="grid grid-cols-2 gap-3 text-xs text-[#b0b0d0]">
-              <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
-                ID: <span className="font-mono text-white">{campaign.id.slice(0, 8)}…</span>
-              </span>
-              <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
-                Created: <span className="text-white">{new Date(campaign.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-              </span>
+        <div className="space-y-6">
+          {/* Campaign Settings card */}
+          <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-white text-lg">Campaign Settings</h2>
+              <div className="grid grid-cols-2 gap-3 text-xs text-[#b0b0d0]">
+                <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
+                  ID: <span className="font-mono text-white">{campaign.id.slice(0, 8)}…</span>
+                </span>
+                <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
+                  Created: <span className="text-white">{new Date(campaign.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                </span>
+              </div>
             </div>
-          </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Campaign Name</label>
-              <input
-                type="text"
-                value={settingsName}
-                onChange={e => setSettingsName(e.target.value)}
-                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
-                placeholder="Campaign name"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Brief / Compliance Criteria</label>
-              <textarea
-                value={settingsBrief}
-                onChange={e => setSettingsBrief(e.target.value)}
-                rows={4}
-                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors resize-none"
-                placeholder="Describe the compliance criteria for this campaign…"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Payout per Task (£)</label>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Campaign Name</label>
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={settingsPayout}
-                  onChange={e => setSettingsPayout(e.target.value)}
+                  type="text"
+                  value={settingsName}
+                  onChange={e => setSettingsName(e.target.value)}
                   className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
-                  placeholder="0.00"
+                  placeholder="Campaign name"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Status</label>
-                <select
-                  value={settingsStatus}
-                  onChange={e => setSettingsStatus(e.target.value)}
-                  className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="active">Active</option>
-                  <option value="paused">Paused</option>
-                  <option value="completed">Completed</option>
-                </select>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Brief / Compliance Criteria</label>
+                <textarea
+                  value={settingsBrief}
+                  onChange={e => setSettingsBrief(e.target.value)}
+                  rows={4}
+                  className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors resize-none"
+                  placeholder="Describe the compliance criteria for this campaign…"
+                />
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Payout per Task (£)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={settingsPayout}
+                    onChange={e => setSettingsPayout(e.target.value)}
+                    className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Status</label>
+                  <select
+                    value={settingsStatus}
+                    onChange={e => setSettingsStatus(e.target.value)}
+                    className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
+                  >
+                    <option value="draft">Draft</option>
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                    <option value="completed">Completed</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
+              {saveResult ? (
+                <span className="text-sm font-medium" style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}>
+                  {saveResult.msg}
+                </span>
+              ) : <span />}
+              <button
+                onClick={handleSaveSettings}
+                disabled={saving}
+                className="flex items-center gap-2 bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 text-sm"
+              >
+                {saving ? 'Saving…' : 'Save Changes'}
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
-            {saveResult ? (
-              <span className="text-sm font-medium" style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}>
-                {saveResult.msg}
-              </span>
-            ) : <span />}
-            <button
-              onClick={handleSaveSettings}
-              disabled={saving}
-              className="flex items-center gap-2 bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 text-sm"
-            >
-              {saving ? 'Saving…' : 'Save Changes'}
-            </button>
+          {/* Compliance Rules card */}
+          <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#7c6df5]/15 border border-[#7c6df5]/30 flex items-center justify-center">
+                  <Shield size={15} className="text-[#a89cf7]" />
+                </div>
+                <div>
+                  <h2 className="font-bold text-white text-lg">Compliance Rules</h2>
+                  <p className="text-xs text-[#b0b0d0]">Rules enforced by the AI scorer on every submission</p>
+                </div>
+              </div>
+              {rules.length > 0 && (
+                <div className="text-xs text-[#b0b0d0]">
+                  {rules.length} rule{rules.length !== 1 ? 's' : ''}
+                  {' · '}
+                  <span style={{ color: rules.reduce((s, r) => s + r.weight, 0) > 100 ? '#ff6b9d' : '#00e096' }}>
+                    {rules.reduce((s, r) => s + r.weight, 0)}% total weight
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Weight sum warning */}
+            {rules.reduce((s, r) => s + r.weight, 0) > 100 && (
+              <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-[#ff6b9d]/10 border border-[#ff6b9d]/30">
+                <AlertTriangle size={14} className="text-[#ff6b9d] flex-shrink-0" />
+                <span className="text-sm text-[#ff6b9d]">Rule weights sum to {rules.reduce((s, r) => s + r.weight, 0)}% — values above 100% may distort scoring. Consider rebalancing.</span>
+              </div>
+            )}
+
+            {/* Weight donut visualiser */}
+            {rules.length > 0 && (() => {
+              const total = rules.reduce((s, r) => s + r.weight, 0)
+              const capped = Math.min(total, 100)
+              const r = 28
+              const circ = 2 * Math.PI * r
+              const colors = ['#7c6df5', '#00d4d4', '#00e096', '#ffc947', '#ff6b9d']
+              let offset = 0
+              return (
+                <div className="flex items-center gap-5 py-3 px-4 bg-[#030305] border border-[#222240] rounded-xl">
+                  <svg width={72} height={72} viewBox="0 0 72 72">
+                    <circle cx={36} cy={36} r={r} fill="none" stroke="#222240" strokeWidth={8} />
+                    {rules.map((rule, i) => {
+                      const pct = Math.min(rule.weight, 100) / Math.max(total, 1)
+                      const dash = pct * capped / 100 * circ
+                      const gap = circ - dash
+                      const el = (
+                        <circle
+                          key={rule.id}
+                          cx={36} cy={36} r={r}
+                          fill="none"
+                          stroke={colors[i % colors.length]}
+                          strokeWidth={8}
+                          strokeDasharray={`${dash} ${gap}`}
+                          strokeDashoffset={-offset}
+                          strokeLinecap="round"
+                          style={{ transform: 'rotate(-90deg)', transformOrigin: '36px 36px' }}
+                        />
+                      )
+                      offset += dash
+                      return el
+                    })}
+                    <text x={36} y={40} textAnchor="middle" fontSize={13} fontWeight={800} fill="white">{Math.min(total, 100)}%</text>
+                  </svg>
+                  <div className="flex flex-wrap gap-x-5 gap-y-1.5">
+                    {rules.map((rule, i) => (
+                      <div key={rule.id} className="flex items-center gap-1.5 text-xs text-[#b0b0d0]">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: colors[i % colors.length] }} />
+                        <span className="truncate max-w-[140px]">{rule.description}</span>
+                        <span className="font-bold text-white">{rule.weight}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
+
+            {/* Rules table */}
+            {rulesLoading ? (
+              <div className="text-sm text-[#b0b0d0] py-4 text-center">Loading rules…</div>
+            ) : rules.length > 0 ? (
+              <div className="border border-[#222240] rounded-xl overflow-hidden">
+                <div className="grid grid-cols-[1fr_2.5fr_80px_90px_44px] gap-4 px-5 py-2.5 border-b border-[#222240] text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">
+                  <span>Type</span>
+                  <span>Description</span>
+                  <span className="text-center">Weight</span>
+                  <span className="text-center">Blocking</span>
+                  <span />
+                </div>
+                <div className="divide-y divide-[#222240]">
+                  {rules.map(rule => {
+                    const colors = RULE_TYPE_COLORS[rule.rule_type]
+                    return (
+                      <div key={rule.id} className="grid grid-cols-[1fr_2.5fr_80px_90px_44px] gap-4 px-5 py-3.5 items-center hover:bg-white/[0.015] transition-colors">
+                        <span
+                          className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold w-fit"
+                          style={{ background: colors.bg, border: `1px solid ${colors.border}`, color: colors.text }}
+                        >
+                          {RULE_TYPE_LABELS[rule.rule_type]}
+                        </span>
+                        <span className="text-sm text-white truncate">{rule.description}</span>
+                        <span className="text-center text-sm font-bold text-white">{rule.weight}%</span>
+                        <div className="flex justify-center">
+                          <button
+                            onClick={() => handleToggleBlocking(rule)}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                              rule.is_blocking
+                                ? 'bg-[#ff6b9d]/15 border border-[#ff6b9d]/40 text-[#ff6b9d]'
+                                : 'bg-[#222240] border border-[#333360] text-[#b0b0d0] hover:text-white'
+                            }`}
+                            title={rule.is_blocking ? 'Blocking — click to disable' : 'Not blocking — click to enable'}
+                          >
+                            {rule.is_blocking ? <ShieldAlert size={11} /> : <Shield size={11} />}
+                            {rule.is_blocking ? 'Blocking' : 'Off'}
+                          </button>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteRule(rule.id)}
+                          className="flex items-center justify-center w-8 h-8 rounded-lg text-[#b0b0d0] hover:text-[#ff6b9d] hover:bg-[#ff6b9d]/10 transition-colors"
+                          title="Delete rule"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm text-[#b0b0d0] py-6 text-center border border-dashed border-[#222240] rounded-xl">
+                No rules yet — add your first rule below or load a preset.
+              </div>
+            )}
+
+            {/* Add rule form */}
+            <div className="border border-[#222240] rounded-xl p-5 space-y-4 bg-[#030305]">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-white">Add Rule</span>
+                {/* Preset loader */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-[#b0b0d0]">Load preset:</span>
+                  <select
+                    value={selectedPreset}
+                    onChange={e => { if (e.target.value) applyPreset(e.target.value) }}
+                    className="bg-[#0c0c18] border border-[#222240] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#7c6df5]/60 transition-colors cursor-pointer"
+                  >
+                    <option value="">Choose preset…</option>
+                    {Object.keys(RULE_PRESETS).map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedPreset && (
+                <div className="flex flex-wrap gap-2 p-3 bg-[#7c6df5]/10 border border-[#7c6df5]/20 rounded-xl">
+                  <span className="text-xs font-semibold text-[#a89cf7] w-full mb-1">{selectedPreset} — click a rule to load it into the form:</span>
+                  {RULE_PRESETS[selectedPreset].map((pr, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setNewRuleType(pr.rule_type)
+                        setNewRuleDesc(pr.description)
+                        setNewRuleWeight(pr.weight)
+                        setNewRuleBlocking(pr.is_blocking ?? false)
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-[#7c6df5]/30 text-[#a89cf7] hover:bg-[#7c6df5]/20 transition-colors"
+                    >
+                      {pr.description}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-[180px_1fr] gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Rule Type</label>
+                  <select
+                    value={newRuleType}
+                    onChange={e => { setNewRuleType(e.target.value as RuleType); setNewRuleDesc('') }}
+                    className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
+                  >
+                    {(Object.keys(RULE_TYPE_LABELS) as RuleType[]).map(t => (
+                      <option key={t} value={t}>{RULE_TYPE_LABELS[t]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Description</label>
+                  <input
+                    type="text"
+                    value={newRuleDesc}
+                    onChange={e => setNewRuleDesc(e.target.value)}
+                    placeholder={RULE_TYPE_PLACEHOLDERS[newRuleType]}
+                    className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-2.5 text-white text-sm placeholder-[#b0b0d0]/40 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Weight</label>
+                    <span className="text-xs font-bold text-white">Worth {newRuleWeight}% of score</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={100}
+                    value={newRuleWeight}
+                    onChange={e => setNewRuleWeight(Number(e.target.value))}
+                    className="w-full accent-[#7c6df5]"
+                  />
+                  <div className="flex justify-between text-xs text-[#b0b0d0] mt-1">
+                    <span>1%</span>
+                    <span>50%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Blocking</label>
+                  <button
+                    onClick={() => setNewRuleBlocking(v => !v)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                      newRuleBlocking
+                        ? 'bg-[#ff6b9d]/15 border-[#ff6b9d]/40 text-[#ff6b9d]'
+                        : 'bg-[#0c0c18] border-[#222240] text-[#b0b0d0] hover:text-white'
+                    }`}
+                  >
+                    {newRuleBlocking ? <ShieldAlert size={14} /> : <Shield size={14} />}
+                    {newRuleBlocking ? 'Blocking ON' : 'Blocking OFF'}
+                  </button>
+                  <p className="text-xs text-[#b0b0d0] mt-1.5 max-w-[160px]">
+                    {newRuleBlocking ? 'Violation = non-compliant regardless of score' : 'Violation reduces score only'}
+                  </p>
+                </div>
+              </div>
+
+              {addRuleError && (
+                <p className="text-xs text-[#ff6b9d]">{addRuleError}</p>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleAddRule}
+                  disabled={addingRule || !newRuleDesc.trim()}
+                  className="flex items-center gap-2 bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 text-sm"
+                >
+                  <Plus size={15} />
+                  {addingRule ? 'Adding…' : 'Add Rule'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

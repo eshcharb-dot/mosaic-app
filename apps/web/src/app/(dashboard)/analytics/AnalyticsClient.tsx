@@ -1,6 +1,6 @@
 'use client'
 import { useState, memo } from 'react'
-import { TrendingUp, BarChart3, AlertTriangle, Trophy } from 'lucide-react'
+import { TrendingUp, BarChart3, AlertTriangle, Trophy, Award } from 'lucide-react'
 import {
   BarChart,
   Bar,
@@ -41,12 +41,20 @@ interface TrendPoint {
   avg_score: number
 }
 
+interface TierDistRow {
+  tier: string
+  tier_name: string
+  count: number
+  badge_color: string
+}
+
 interface Props {
   scoreDistribution: ScoreBucket[]
   topStores: StoreRow[]
   bottomStores: StoreRow[]
   campaignComparison: CampaignRow[]
   trend: TrendPoint[]
+  tierDistribution?: TierDistRow[]
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -55,6 +63,9 @@ const DATE_RANGES = ['Last 7 days', 'Last 30 days', 'Last 90 days']
 
 // Canonical ordered buckets so chart always shows all ranges left-to-right
 const RANGE_ORDER = ['Below 60', '60-69', '70-79', '80-89', '90-100']
+
+// Canonical tier order for the distribution chart (highest to lowest)
+const TIER_ORDER = ['elite', 'gold', 'silver', 'bronze']
 
 function scoreColor(score: number): string {
   if (score >= 80) return '#00e096'
@@ -102,6 +113,16 @@ const DistributionTooltip = memo(function DistributionTooltip({ active, payload,
     <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
       <div className="text-[#b0b0d0] mb-1">{label}</div>
       <div className="text-white font-bold text-sm">{payload[0].value} stores</div>
+    </div>
+  )
+})
+
+const TierTooltip = memo(function TierTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[#b0b0d0] mb-1">{label}</div>
+      <div className="text-white font-bold text-sm">{payload[0].value} collectors</div>
     </div>
   )
 })
@@ -181,6 +202,81 @@ const StoresTable = memo(function StoresTable({ stores, mode }: { stores: StoreR
   )
 })
 
+// ── Tier Distribution chart ───────────────────────────────────────────────────
+
+function TierDistribution({ data }: { data: TierDistRow[] }) {
+  // Fill missing tiers with 0 and maintain canonical order
+  const chartData = TIER_ORDER.map(tierId => {
+    const found = data.find(d => d.tier === tierId)
+    return {
+      tier: tierId,
+      name: found?.tier_name ?? (tierId.charAt(0).toUpperCase() + tierId.slice(1)),
+      count: found ? Number(found.count) : 0,
+      badge_color: found?.badge_color ?? '#cd7f32',
+    }
+  })
+
+  if (chartData.every(d => d.count === 0)) {
+    return (
+      <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">
+        No tier data available yet
+      </div>
+    )
+  }
+
+  const total = chartData.reduce((s, d) => s + d.count, 0)
+
+  return (
+    <div className="space-y-4">
+      {/* Bar chart */}
+      <ResponsiveContainer width="100%" height={200}>
+        <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+          <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
+          <XAxis
+            dataKey="name"
+            tick={{ fill: '#b0b0d0', fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            allowDecimals={false}
+            tick={{ fill: '#b0b0d0', fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            width={28}
+          />
+          <Tooltip content={<TierTooltip />} cursor={{ fill: '#ffffff08' }} />
+          <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+            {chartData.map(entry => (
+              <Cell key={entry.tier} fill={entry.badge_color} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+
+      {/* Summary pills */}
+      <div className="flex flex-wrap gap-3 pt-1">
+        {chartData.map(d => (
+          <div
+            key={d.tier}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold"
+            style={{ borderColor: d.badge_color + '40', backgroundColor: d.badge_color + '12', color: d.badge_color }}
+          >
+            <span
+              className="w-2 h-2 rounded-full"
+              style={{ backgroundColor: d.badge_color }}
+            />
+            {d.name}: {d.count}
+            {total > 0 && (
+              <span className="opacity-60">({Math.round((d.count / total) * 100)}%)</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function AnalyticsClient({
@@ -189,6 +285,7 @@ export default function AnalyticsClient({
   bottomStores,
   campaignComparison,
   trend,
+  tierDistribution = [],
 }: Props) {
   const [activeRange, setActiveRange] = useState('Last 30 days')
 
@@ -366,7 +463,7 @@ export default function AnalyticsClient({
       </div>
 
       {/* Row 4: 30-day Trend */}
-      <div>
+      <div className="mb-5">
         <SectionCard
           title="30-Day Compliance Trend"
           subtitle="Percentage of audits passing compliance over time"
@@ -417,6 +514,17 @@ export default function AnalyticsClient({
               </AreaChart>
             </ResponsiveContainer>
           )}
+        </SectionCard>
+      </div>
+
+      {/* Row 5: Collector Tier Distribution */}
+      <div>
+        <SectionCard
+          title="Collector Tier Distribution"
+          subtitle="Number of active collectors in each tier"
+          icon={Award}
+        >
+          <TierDistribution data={tierDistribution} />
         </SectionCard>
       </div>
     </div>
