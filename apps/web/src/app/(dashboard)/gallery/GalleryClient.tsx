@@ -18,6 +18,7 @@ export interface Submission {
 
 interface Props {
   submissions: Submission[]
+  initialCampaignFilter?: string
 }
 
 type StatusFilter = 'all' | 'compliant' | 'non-compliant' | 'pending'
@@ -346,8 +347,8 @@ const SubmissionCard = memo(function SubmissionCard({
   )
 })
 
-export default function GalleryClient({ submissions }: Props) {
-  const [campaignFilter, setCampaignFilter] = useState<string>('all')
+export default function GalleryClient({ submissions, initialCampaignFilter = 'all' }: Props) {
+  const [campaignFilter, setCampaignFilter] = useState<string>(initialCampaignFilter)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedSub, setSelectedSub] = useState<Submission | null>(null)

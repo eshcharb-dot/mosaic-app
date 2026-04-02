@@ -12,6 +12,8 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera'
 import { supabase } from '../../lib/supabase'
+import { useIsOnline } from '../../lib/connectivity'
+import { enqueueSubmission, markTaskPendingSync } from '../../lib/offlineQueue'
 import type { Task, Store, Campaign } from '@mosaic/types'
 
 type TaskWithRelations = Task & {
@@ -30,6 +32,7 @@ const CORNER_THICKNESS = 3
 export default function CaptureScreen() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>()
   const router = useRouter()
+  const isOnline = useIsOnline()
 
   const [permission, requestPermission] = useCameraPermissions()
   const [task, setTask] = useState<TaskWithRelations | null>(null)
@@ -75,6 +78,28 @@ export default function CaptureScreen() {
     setUploading(true)
     setUploadError(null)
 
+    // ── Offline path ───────────────────────────────────────────────────────────
+    if (!isOnline) {
+      try {
+        const localId = await enqueueSubmission(task.id, capturedUri)
+        await markTaskPendingSync(task.id)
+        router.replace({
+          pathname: '/capture/success',
+          params: {
+            payout: String(task.payout_cents),
+            taskId: task.id,
+            submissionId: localId,
+            mode: 'offline',
+          },
+        })
+      } catch (err) {
+        setUploadError('Failed to save offline. Please try again.')
+        setUploading(false)
+      }
+      return
+    }
+
+    // ── Online path (unchanged) ────────────────────────────────────────────────
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in to submit.')
@@ -135,6 +160,7 @@ export default function CaptureScreen() {
           payout: String(task.payout_cents),
           taskId: task.id,
           submissionId: submissionData?.id ?? '',
+          mode: 'online',
         },
       })
     } catch (err) {

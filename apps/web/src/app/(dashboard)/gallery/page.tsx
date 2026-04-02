@@ -1,14 +1,19 @@
 import { createClient } from '@/lib/supabase/server'
 import GalleryClient from './GalleryClient'
 
-export default async function GalleryPage() {
+interface PageProps {
+  searchParams: Promise<{ campaign?: string }>
+}
+
+export default async function GalleryPage({ searchParams }: PageProps) {
   const supabase = await createClient()
+  const params = await searchParams
 
   const { data: submissions, error } = await supabase
     .from('submissions')
     .select(`
       id,
-      photo_url,
+      photo_urls,
       submitted_at,
       store_id,
       campaign_id,
@@ -35,7 +40,7 @@ export default async function GalleryPage() {
   // Flatten for client
   const rows = (submissions ?? []).map((s: any) => ({
     id: s.id,
-    photo_url: s.photo_url,
+    photo_url: s.photo_urls?.[0] ?? null,
     submitted_at: s.submitted_at,
     store_id: s.store_id,
     campaign_id: s.campaign_id,
@@ -47,5 +52,20 @@ export default async function GalleryPage() {
     summary: s.compliance_results?.[0]?.summary ?? null,
   }))
 
-  return <GalleryClient submissions={rows} />
+  // Pre-select campaign if ?campaign= param is provided
+  // Resolve campaign id -> campaign name for the filter dropdown
+  let initialCampaignFilter = 'all'
+  if (params.campaign) {
+    const match = rows.find(r => r.campaign_id === params.campaign)
+    if (match?.campaign_name) {
+      initialCampaignFilter = match.campaign_name
+    }
+  }
+
+  return (
+    <GalleryClient
+      submissions={rows}
+      initialCampaignFilter={initialCampaignFilter}
+    />
+  )
 }

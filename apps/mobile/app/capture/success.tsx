@@ -5,13 +5,17 @@ import { useLocalSearchParams, useRouter } from 'expo-router'
 const RING_SIZE = 160
 const STROKE = 10
 
+const OFFLINE_AMBER = '#ffa040'
+
 // --- Pure-RN circular progress ring (no SVG dep required) ---
 // Uses two half-disc clipping masks rotated by an Animated value.
 // Works on iOS and Android with zero native modules.
 
 export default function SuccessScreen() {
-  const { payout } = useLocalSearchParams<{ payout?: string }>()
+  const { payout, mode } = useLocalSearchParams<{ payout?: string; mode?: string }>()
   const router = useRouter()
+
+  const isOffline = mode === 'offline'
 
   const [scoreState, setScoreState] = useState<'analyzing' | 'done'>('analyzing')
   const [displayScore, setDisplayScore] = useState(0)
@@ -39,6 +43,9 @@ export default function SuccessScreen() {
       ]),
     ]).start()
 
+    // Offline mode: skip the analyzing / score animation entirely
+    if (isOffline) return
+
     // Pulsing dot
     const pulse = Animated.loop(
       Animated.sequence([
@@ -64,7 +71,7 @@ export default function SuccessScreen() {
       clearTimeout(timer)
       pulse.stop()
     }
-  }, [scaleAnim, opacityAnim, pulseAnim, ringAnim, scoreAnim])
+  }, [scaleAnim, opacityAnim, pulseAnim, ringAnim, scoreAnim, isOffline])
 
   // Keep displayScore in sync with animated value
   useEffect(() => {
@@ -74,6 +81,53 @@ export default function SuccessScreen() {
 
   const ringColor = MOCK_COMPLIANT ? '#00e096' : '#ff4d6d'
 
+  // ── Offline success screen ────────────────────────────────────────────────
+  if (isOffline) {
+    return (
+      <View style={s.container}>
+        <View style={s.content}>
+          {/* Cloud icon */}
+          <Animated.View
+            style={[
+              s.cloudCircle,
+              { transform: [{ scale: scaleAnim }], opacity: opacityAnim },
+            ]}
+          >
+            <Text style={s.cloudIcon}>☁</Text>
+          </Animated.View>
+
+          <Text style={s.heading}>Saved offline</Text>
+          <Text style={[s.subtext, { color: OFFLINE_AMBER }]}>
+            will sync when connected
+          </Text>
+
+          {/* Saved for sync card */}
+          <View style={s.offlineCard}>
+            <Text style={s.offlineCardTitle}>Saved for sync</Text>
+            <Text style={s.offlineCardSub}>
+              You'll be notified when your submission is processed
+            </Text>
+          </View>
+
+          <Text style={s.subtext}>
+            Your photo is queued and will be submitted automatically once you're back online.
+          </Text>
+        </View>
+
+        {/* CTA */}
+        <View style={s.footer}>
+          <TouchableOpacity
+            style={[s.backBtn, { backgroundColor: OFFLINE_AMBER }]}
+            onPress={() => router.replace('/(tabs)')}
+          >
+            <Text style={s.backBtnText}>Back to Tasks</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
+  }
+
+  // ── Online success screen (original) ─────────────────────────────────────
   return (
     <View style={s.container}>
       <View style={s.content}>
@@ -261,6 +315,7 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#030305' },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 },
 
+  // Online: green check circle
   checkCircle: {
     width: 80,
     height: 80,
@@ -273,6 +328,19 @@ const s = StyleSheet.create({
   },
   checkmark: { fontSize: 38, color: '#00e096', lineHeight: 46 },
 
+  // Offline: amber cloud circle
+  cloudCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,160,64,0.12)',
+    borderWidth: 2,
+    borderColor: 'rgba(255,160,64,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cloudIcon: { fontSize: 36, color: OFFLINE_AMBER, lineHeight: 44 },
+
   heading: {
     fontSize: 36,
     fontWeight: '900',
@@ -284,7 +352,7 @@ const s = StyleSheet.create({
     color: '#b0b0d0',
     textAlign: 'center',
     lineHeight: 20,
-    maxWidth: 240,
+    maxWidth: 260,
   },
 
   analyzingRow: {
@@ -340,6 +408,21 @@ const s = StyleSheet.create({
   },
   payoutAmount: { fontSize: 44, fontWeight: '900', color: '#00e096' },
   payoutLabel: { fontSize: 16, color: '#00e096', opacity: 0.7, fontWeight: '600', marginTop: 2 },
+
+  // Offline sync card
+  offlineCard: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,160,64,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,160,64,0.3)',
+    borderRadius: 20,
+    paddingHorizontal: 32,
+    paddingVertical: 20,
+    gap: 6,
+    maxWidth: 280,
+  },
+  offlineCardTitle: { fontSize: 20, fontWeight: '800', color: OFFLINE_AMBER },
+  offlineCardSub: { fontSize: 14, color: '#b0b0d0', textAlign: 'center', lineHeight: 20 },
 
   footer: {
     padding: 24,

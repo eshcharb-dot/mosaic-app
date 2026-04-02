@@ -4,12 +4,23 @@ import DashboardClient from './DashboardClient'
 export default async function DashboardPage() {
   const supabase = await createClient()
 
-  const { data: campaigns } = await supabase
-    .from('campaigns')
-    .select('*, campaign_stores(count)')
-    .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(5)
+  // Get authenticated user's org
+  const { data: { user } } = await supabase.auth.getUser()
+
+  let orgId: string | null = null
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('id', user.id)
+      .single()
+    orgId = profile?.organization_id ?? null
+  }
+
+  // Fetch all campaigns overview via RPC
+  const { data: campaignsOverview } = orgId
+    ? await supabase.rpc('get_all_campaigns_overview', { p_org_id: orgId })
+    : { data: [] }
 
   const { data: recentSubmissions } = await supabase
     .from('submissions')
@@ -17,8 +28,8 @@ export default async function DashboardPage() {
     .order('submitted_at', { ascending: false })
     .limit(20)
 
-  // Use the first active campaign for trend + map data
-  const firstCampaignId = campaigns?.[0]?.id ?? null
+  // Use the first campaign for trend + map data
+  const firstCampaignId = campaignsOverview?.[0]?.campaign_id ?? null
 
   const [trendRes, mapRes] = await Promise.all([
     firstCampaignId
@@ -31,7 +42,7 @@ export default async function DashboardPage() {
 
   return (
     <DashboardClient
-      campaigns={campaigns ?? []}
+      campaigns={campaignsOverview ?? []}
       submissions={recentSubmissions ?? []}
       trend={trendRes.data ?? []}
       mapData={mapRes.data ?? []}

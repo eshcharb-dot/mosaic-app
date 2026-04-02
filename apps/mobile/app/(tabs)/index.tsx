@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router'
 import { MapPin, Clock, ChevronRight } from 'lucide-react-native'
 import * as Location from 'expo-location'
 import { supabase } from '../../lib/supabase'
+import { getPendingSyncTaskIds } from '../../lib/offlineQueue'
 import type { Task } from '@mosaic/types'
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -29,6 +30,7 @@ export default function TaskFeedScreen() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [userLoc, setUserLoc] = useState<{ lat: number; lng: number } | null>(null)
+  const [pendingSyncIds, setPendingSyncIds] = useState<Set<string>>(new Set())
   const router = useRouter()
 
   // Request location silently — no blocker if denied
@@ -41,6 +43,18 @@ export default function TaskFeedScreen() {
     })()
   }, [])
 
+  // Load locally queued (pending sync) task IDs
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const ids = await getPendingSyncTaskIds()
+        setPendingSyncIds(new Set(ids))
+      } catch {
+        // AsyncStorage unavailable — no badges
+      }
+    })()
+  }, [])
+
   async function loadTasks() {
     const { data } = await supabase
       .from('tasks')
@@ -49,6 +63,15 @@ export default function TaskFeedScreen() {
       .order('created_at', { ascending: false })
       .limit(30)
     setTasks((data as any) ?? [])
+
+    // Refresh pending-sync badge set alongside task data
+    try {
+      const ids = await getPendingSyncTaskIds()
+      setPendingSyncIds(new Set(ids))
+    } catch {
+      // ignore
+    }
+
     setLoading(false)
     setRefreshing(false)
   }
@@ -100,11 +123,19 @@ export default function TaskFeedScreen() {
             const dist = userLoc && store?.lat && store?.lng
               ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
               : null
+            const isPendingSync = pendingSyncIds.has(task.id)
             return (
               <TouchableOpacity style={s.card} onPress={() => router.push(`/task/${task.id}`)}>
                 <View style={s.cardTop}>
                   <View style={s.cardInfo}>
-                    <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
+                    <View style={s.storeNameRow}>
+                      <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
+                      {isPendingSync && (
+                        <View style={s.offlineBadge}>
+                          <Text style={s.offlineBadgeText}>Offline</Text>
+                        </View>
+                      )}
+                    </View>
                     <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
                   </View>
                   <View style={s.cardTopRight}>
@@ -156,7 +187,10 @@ const s = StyleSheet.create({
   cardTop: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   cardInfo: { flex: 1, marginRight: 12 },
   cardTopRight: { alignItems: 'flex-end', gap: 6 },
-  storeName: { fontSize: 18, fontWeight: '700', color: '#ffffff', marginBottom: 3 },
+  storeNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 3 },
+  storeName: { fontSize: 18, fontWeight: '700', color: '#ffffff' },
+  offlineBadge: { backgroundColor: 'rgba(255,160,64,0.12)', borderWidth: 1, borderColor: 'rgba(255,160,64,0.4)', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2 },
+  offlineBadgeText: { fontSize: 11, fontWeight: '700', color: '#ffa040' },
   productName: { fontSize: 14, color: '#b0b0d0' },
   payoutBadge: { backgroundColor: 'rgba(0,224,150,0.12)', borderWidth: 1, borderColor: 'rgba(0,224,150,0.3)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6 },
   payoutText: { fontSize: 18, fontWeight: '900', color: '#00e096' },

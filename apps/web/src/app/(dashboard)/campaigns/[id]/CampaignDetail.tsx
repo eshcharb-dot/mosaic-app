@@ -1,11 +1,12 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2 } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
+import Checkbox from '@/components/ui/Checkbox'
 import StoreUpload from './StoreUpload'
 
 interface StoreRow {
@@ -62,6 +63,19 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [templateSaved, setTemplateSaved] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
 
+  // Store selection
+  const [selectedStoreIds, setSelectedStoreIds] = useState<Set<string>>(new Set())
+  const [storeBulkLoading, setStoreBulkLoading] = useState(false)
+  const [storeBulkResult, setStoreBulkResult] = useState<string | null>(null)
+
+  // Reassign modal
+  const [showReassign, setShowReassign] = useState(false)
+  const [collectorId, setCollectorId] = useState('')
+  const [reassigning, setReassigning] = useState(false)
+
+  // Remove confirmation
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
+
   // Settings form state
   const [settingsName, setSettingsName] = useState(campaign.name)
   const [settingsBrief, setSettingsBrief] = useState(campaign.brief ?? '')
@@ -73,23 +87,109 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
-  // Realtime submissions for this campaign
   const { rows: liveSubmissions } = useRealtimeTable<{ id: string }>(
     'submissions',
     `campaign_id=eq.${campaign.id}`
   )
-  // liveSubmissions only contains rows that arrived after mount; count them as new
   const newSubmissionsCount = liveSubmissions.length
 
-  // Stats
   const totalStores = campaignStores.length
   const compliantCount = campaignStores.filter(cs => cs.status === 'compliant').length
   const compliancePct = totalStores > 0 ? Math.round((compliantCount / totalStores) * 100) : 0
-  const avgScore = totalStores > 0
-    ? Math.round(
-        campaignStores.reduce((sum, cs) => sum + (cs.compliance_score ?? 0), 0) / totalStores
-      )
-    : 0
+  // Store selection helpers
+  const allStoreIds = campaignStores.map(cs => cs.store_id)
+  const allStoresSelected = allStoreIds.length > 0 && allStoreIds.every(id => selectedStoreIds.has(id))
+  const someStoresSelected = allStoreIds.some(id => selectedStoreIds.has(id))
+  const selectedStoreCount = allStoreIds.filter(id => selectedStoreIds.has(id)).length
+  const hasStoreSelection = selectedStoreCount > 0
+
+  function toggleSelectAllStores() {
+    if (allStoresSelected) {
+      setSelectedStoreIds(new Set())
+    } else {
+      setSelectedStoreIds(new Set(allStoreIds))
+    }
+  }
+
+  function toggleStoreRow(storeId: string) {
+    setSelectedStoreIds(prev => {
+      const next = new Set(prev)
+      if (next.has(storeId)) next.delete(storeId)
+      else next.add(storeId)
+      return next
+    })
+  }
+
+  function clearStoreSelection() {
+    setSelectedStoreIds(new Set())
+    setStoreBulkResult(null)
+  }
+
+  // Tab change clears selection
+  useEffect(() => {
+    clearStoreSelection()
+  }, [activeTab])
+
+  // Escape clears store selection when in stores tab
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      if (showReassign) { setShowReassign(false); return }
+      if (showRemoveConfirm) { setShowRemoveConfirm(false); return }
+      clearStoreSelection()
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === 'a' && activeTab === 'stores') {
+      const active = document.activeElement
+      const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')
+      if (!isInput) {
+        e.preventDefault()
+        setSelectedStoreIds(new Set(allStoreIds))
+      }
+    }
+  }, [activeTab, allStoreIds, showReassign, showRemoveConfirm])
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [handleKeyDown])
+
+  async function runStoreBulkAction(action: 'reassign' | 'mark_complete' | 'remove', extra?: { collectorId?: string }) {
+    const storeIds = allStoreIds.filter(id => selectedStoreIds.has(id))
+    if (storeIds.length === 0) return
+    setStoreBulkLoading(true)
+    setStoreBulkResult(null)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/stores/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ storeIds, action, ...extra }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setStoreBulkResult(`Error: ${json.error ?? 'Unknown error'}`)
+      } else {
+        setStoreBulkResult(
+          action === 'remove'
+            ? `Removed ${json.removed ?? 0} store${json.removed !== 1 ? 's' : ''}`
+            : `Updated ${json.updated ?? 0} task${json.updated !== 1 ? 's' : ''}`
+        )
+        clearStoreSelection()
+        router.refresh()
+      }
+    } catch {
+      setStoreBulkResult('Network error — please try again')
+    } finally {
+      setStoreBulkLoading(false)
+    }
+  }
+
+  async function handleReassignSubmit() {
+    if (!collectorId.trim()) return
+    setReassigning(true)
+    await runStoreBulkAction('reassign', { collectorId: collectorId.trim() })
+    setReassigning(false)
+    setShowReassign(false)
+    setCollectorId('')
+  }
 
   async function handleActivate() {
     setActivating(true)
@@ -97,10 +197,7 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
       .from('campaigns')
       .update({ status: 'active' })
       .eq('id', campaign.id)
-
-    if (!error) {
-      setStatus('active')
-    }
+    if (!error) setStatus('active')
     setActivating(false)
   }
 
@@ -149,9 +246,7 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     try {
       const res = await fetch(`/api/campaigns/${campaign.id}/duplicate`, { method: 'POST' })
       const json = await res.json()
-      if (res.ok && json.id) {
-        router.push(`/campaigns/${json.id}`)
-      }
+      if (res.ok && json.id) router.push(`/campaigns/${json.id}`)
     } finally {
       setDuplicating(false)
     }
@@ -182,7 +277,6 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     }
   }
 
-  // Close more menu on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
@@ -366,7 +460,6 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           >
             <Icon size={15} />
             {label}
-            {/* Live submissions badge on the Submissions tab */}
             {key === 'submissions' && newSubmissionsCount > 0 && (
               <span
                 style={{
@@ -407,8 +500,28 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
             </div>
           ) : (
             <>
+              {/* Selection count badge */}
+              {hasStoreSelection && (
+                <div className="px-6 py-2.5 border-b border-[#222240] flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#7c6df5]/20 border border-[#7c6df5]/40 text-[#a89cf7]">
+                    {selectedStoreCount} selected
+                    <button onClick={clearStoreSelection} className="hover:text-white transition-colors ml-0.5">
+                      <X size={11} />
+                    </button>
+                  </span>
+                </div>
+              )}
+
               {/* Table header */}
-              <div className="grid grid-cols-[2fr_1fr_1fr_110px_80px] gap-4 px-6 py-3 border-b border-[#222240] text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">
+              <div className="grid grid-cols-[36px_2fr_1fr_1fr_110px_80px] gap-4 px-6 py-3 border-b border-[#222240] text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider items-center">
+                <div className="flex items-center">
+                  <Checkbox
+                    checked={allStoresSelected}
+                    indeterminate={someStoresSelected && !allStoresSelected}
+                    onChange={toggleSelectAllStores}
+                    size="sm"
+                  />
+                </div>
                 <span>Store</span>
                 <span>City</span>
                 <span>Retailer</span>
@@ -416,48 +529,62 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                 <span className="text-right">Score</span>
               </div>
               <div className="divide-y divide-[#222240]">
-                {campaignStores.map((cs) => (
-                  <div
-                    key={cs.id}
-                    className="grid grid-cols-[2fr_1fr_1fr_110px_80px] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-colors"
-                  >
-                    <div className="font-medium text-white truncate">
-                      {cs.stores ? (
-                        <Link
-                          href={`/stores/${cs.store_id}`}
-                          className="hover:text-[#a89cf7] transition-colors"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {cs.stores.name}
-                        </Link>
-                      ) : '—'}
+                {campaignStores.map((cs) => {
+                  const isSelected = selectedStoreIds.has(cs.store_id)
+                  return (
+                    <div
+                      key={cs.id}
+                      className={`grid grid-cols-[36px_2fr_1fr_1fr_110px_80px] gap-4 px-6 py-4 items-center transition-colors ${
+                        isSelected
+                          ? 'bg-[#7c6df5]/[0.06] hover:bg-[#7c6df5]/[0.09]'
+                          : 'hover:bg-white/[0.02]'
+                      }`}
+                    >
+                      <div className="flex items-center" onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => toggleStoreRow(cs.store_id)}
+                          size="sm"
+                        />
+                      </div>
+                      <div className="font-medium text-white truncate">
+                        {cs.stores ? (
+                          <Link
+                            href={`/stores/${cs.store_id}`}
+                            className="hover:text-[#a89cf7] transition-colors"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            {cs.stores.name}
+                          </Link>
+                        ) : '—'}
+                      </div>
+                      <div className="text-sm text-[#b0b0d0]">{cs.stores?.city ?? '—'}</div>
+                      <div className="text-sm text-[#b0b0d0]">{cs.stores?.retailer ?? '—'}</div>
+                      <div>
+                        <Badge status={cs.status} size="sm" />
+                      </div>
+                      <div className="text-right">
+                        {cs.compliance_score !== null ? (
+                          <span
+                            className="font-bold text-sm"
+                            style={{
+                              color:
+                                cs.compliance_score >= 80
+                                  ? '#00e096'
+                                  : cs.compliance_score >= 60
+                                  ? '#ffc947'
+                                  : '#ff6b9d',
+                            }}
+                          >
+                            {Math.round(cs.compliance_score)}%
+                          </span>
+                        ) : (
+                          <span className="text-[#b0b0d0] text-sm">—</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-sm text-[#b0b0d0]">{cs.stores?.city ?? '—'}</div>
-                    <div className="text-sm text-[#b0b0d0]">{cs.stores?.retailer ?? '—'}</div>
-                    <div>
-                      <Badge status={cs.status} size="sm" />
-                    </div>
-                    <div className="text-right">
-                      {cs.compliance_score !== null ? (
-                        <span
-                          className="font-bold text-sm"
-                          style={{
-                            color:
-                              cs.compliance_score >= 80
-                                ? '#00e096'
-                                : cs.compliance_score >= 60
-                                ? '#ffc947'
-                                : '#ff6b9d',
-                          }}
-                        >
-                          {Math.round(cs.compliance_score)}%
-                        </span>
-                      ) : (
-                        <span className="text-[#b0b0d0] text-sm">—</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
               {/* Upload more */}
               <div className="px-6 py-4 border-t border-[#222240] flex items-center justify-between">
@@ -493,11 +620,8 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           </div>
 
           <div className="space-y-4">
-            {/* Campaign Name */}
             <div>
-              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
-                Campaign Name
-              </label>
+              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Campaign Name</label>
               <input
                 type="text"
                 value={settingsName}
@@ -506,12 +630,8 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                 placeholder="Campaign name"
               />
             </div>
-
-            {/* Brief / Compliance Criteria */}
             <div>
-              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
-                Brief / Compliance Criteria
-              </label>
+              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Brief / Compliance Criteria</label>
               <textarea
                 value={settingsBrief}
                 onChange={e => setSettingsBrief(e.target.value)}
@@ -520,13 +640,9 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                 placeholder="Describe the compliance criteria for this campaign…"
               />
             </div>
-
-            {/* Payout + Status row */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
-                  Payout per Task (£)
-                </label>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Payout per Task (£)</label>
                 <input
                   type="number"
                   min="0"
@@ -538,9 +654,7 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
-                  Status
-                </label>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Status</label>
                 <select
                   value={settingsStatus}
                   onChange={e => setSettingsStatus(e.target.value)}
@@ -555,18 +669,12 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
             </div>
           </div>
 
-          {/* Save button + feedback */}
           <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
             {saveResult ? (
-              <span
-                className="text-sm font-medium"
-                style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}
-              >
+              <span className="text-sm font-medium" style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}>
                 {saveResult.msg}
               </span>
-            ) : (
-              <span />
-            )}
+            ) : <span />}
             <button
               onClick={handleSaveSettings}
               disabled={saving}
@@ -574,6 +682,157 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
             >
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Store bulk action bar */}
+      <div
+        className="fixed bottom-6 left-1/2 z-50 transition-all duration-300"
+        style={{
+          transform: hasStoreSelection
+            ? 'translateX(-50%) translateY(0)'
+            : 'translateX(-50%) translateY(120%)',
+          pointerEvents: hasStoreSelection ? 'auto' : 'none',
+          opacity: hasStoreSelection ? 1 : 0,
+        }}
+      >
+        <div
+          className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-[#333360] shadow-2xl"
+          style={{
+            background: 'rgba(12, 12, 24, 0.92)',
+            backdropFilter: 'blur(16px)',
+            WebkitBackdropFilter: 'blur(16px)',
+          }}
+        >
+          <span className="text-sm font-bold text-white mr-1">
+            {selectedStoreCount} store{selectedStoreCount !== 1 ? 's' : ''}
+          </span>
+
+          <div className="w-px h-5 bg-[#333360]" />
+
+          {/* Reassign */}
+          <button
+            onClick={() => setShowReassign(true)}
+            disabled={storeBulkLoading}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold bg-[#7c6df5]/10 border border-[#7c6df5]/30 text-[#a89cf7] hover:bg-[#7c6df5]/20 transition-colors disabled:opacity-50"
+          >
+            <UserCheck size={13} />
+            Reassign tasks
+          </button>
+
+          {/* Mark all complete */}
+          <button
+            onClick={() => runStoreBulkAction('mark_complete')}
+            disabled={storeBulkLoading}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold bg-[#00e096]/10 border border-[#00e096]/30 text-[#00e096] hover:bg-[#00e096]/20 transition-colors disabled:opacity-50"
+          >
+            <CheckCheck size={13} />
+            Mark all complete
+          </button>
+
+          {/* Remove from campaign */}
+          <button
+            onClick={() => setShowRemoveConfirm(true)}
+            disabled={storeBulkLoading}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold bg-[#ff6b9d]/10 border border-[#ff6b9d]/30 text-[#ff6b9d] hover:bg-[#ff6b9d]/20 transition-colors disabled:opacity-50"
+          >
+            <Trash2 size={13} />
+            Remove from campaign
+          </button>
+
+          <div className="w-px h-5 bg-[#333360]" />
+
+          {storeBulkResult && (
+            <span className="text-xs font-medium text-[#00e096]">{storeBulkResult}</span>
+          )}
+
+          <button
+            onClick={clearStoreSelection}
+            className="flex items-center gap-1 text-[#b0b0d0] hover:text-white transition-colors text-sm font-medium"
+          >
+            <X size={14} />
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      {/* Reassign modal */}
+      {showReassign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowReassign(false)} />
+          <div className="relative bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-bold text-white text-lg">Reassign Tasks</h2>
+              <button onClick={() => setShowReassign(false)} className="text-[#b0b0d0] hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-[#b0b0d0] mb-4">
+              All open tasks in the selected {selectedStoreCount} store{selectedStoreCount !== 1 ? 's' : ''} will be assigned to this collector.
+            </p>
+            <div>
+              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Collector ID</label>
+              <input
+                type="text"
+                value={collectorId}
+                onChange={e => setCollectorId(e.target.value)}
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                placeholder="Enter collector UUID"
+                autoFocus
+              />
+            </div>
+            <div className="mt-5 flex gap-3">
+              <button
+                onClick={() => setShowReassign(false)}
+                className="flex-1 py-2.5 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReassignSubmit}
+                disabled={reassigning || !collectorId.trim()}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {reassigning ? 'Reassigning…' : 'Reassign'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Remove confirmation modal */}
+      {showRemoveConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRemoveConfirm(false)} />
+          <div className="relative bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-bold text-white text-lg">Remove Stores</h2>
+              <button onClick={() => setShowRemoveConfirm(false)} className="text-[#b0b0d0] hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="text-sm text-[#b0b0d0] mb-6">
+              Remove {selectedStoreCount} store{selectedStoreCount !== 1 ? 's' : ''} from this campaign? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowRemoveConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white transition-colors text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  setShowRemoveConfirm(false)
+                  await runStoreBulkAction('remove')
+                }}
+                disabled={storeBulkLoading}
+                className="flex-1 py-2.5 rounded-xl bg-[#ff6b9d] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
           </div>
         </div>
       )}
