@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import StoreUpload from './StoreUpload'
 
@@ -28,6 +28,8 @@ interface CampaignStore {
 interface Campaign {
   id: string
   name: string
+  brief: string | null
+  payout_amount: number | null
   product_name: string
   product_sku: string | null
   status: string
@@ -48,6 +50,16 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('stores')
   const [status, setStatus] = useState(campaign.status)
   const [activating, setActivating] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
+  // Settings form state
+  const [settingsName, setSettingsName] = useState(campaign.name)
+  const [settingsBrief, setSettingsBrief] = useState(campaign.brief ?? '')
+  const [settingsPayout, setSettingsPayout] = useState(campaign.payout_amount?.toString() ?? '')
+  const [settingsStatus, setSettingsStatus] = useState(campaign.status)
+  const [saving, setSaving] = useState(false)
+  const [saveResult, setSaveResult] = useState<{ ok: boolean; msg: string } | null>(null)
+
   const router = useRouter()
   const supabase = createClient()
 
@@ -72,6 +84,46 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
       setStatus('active')
     }
     setActivating(false)
+  }
+
+  async function handleSaveSettings() {
+    setSaving(true)
+    setSaveResult(null)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: settingsName,
+          brief: settingsBrief,
+          payout_amount: settingsPayout !== '' ? parseFloat(settingsPayout) : null,
+          status: settingsStatus,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        setSaveResult({ ok: false, msg: json.error ?? 'Failed to save changes' })
+      } else {
+        setStatus(json.campaign.status)
+        setSaveResult({ ok: true, msg: 'Changes saved successfully' })
+        router.refresh()
+      }
+    } catch {
+      setSaveResult({ ok: false, msg: 'Network error — please try again' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleExportCSV() {
+    setExporting(true)
+    const a = document.createElement('a')
+    a.href = `/api/reports/${campaign.id}/export`
+    a.download = ''
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => setExporting(false), 2000)
   }
 
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
@@ -101,6 +153,16 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
         </div>
 
         <div className="flex items-center gap-3">
+          {campaignStores.length > 0 && (
+            <button
+              onClick={handleExportCSV}
+              disabled={exporting}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50 transition-colors text-sm font-medium disabled:opacity-50"
+            >
+              <Download size={15} />
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          )}
           {status === 'draft' && (
             <button
               onClick={handleActivate}
@@ -239,20 +301,101 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
 
       {/* Tab: Settings */}
       {activeTab === 'settings' && (
-        <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-5">
-          <h2 className="font-bold text-white">Campaign Settings</h2>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            {[
-              { label: 'Campaign ID', value: campaign.id },
-              { label: 'Status', value: status },
-              { label: 'SLA', value: `${campaign.sla_minutes} minutes` },
-              { label: 'Created', value: new Date(campaign.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-[#030305] border border-[#222240] rounded-xl p-4">
-                <div className="text-[#b0b0d0] text-xs mb-1">{label}</div>
-                <div className="text-white font-medium font-mono text-xs break-all">{value}</div>
+        <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-bold text-white text-lg">Campaign Settings</h2>
+            <div className="grid grid-cols-2 gap-3 text-xs text-[#b0b0d0]">
+              <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
+                ID: <span className="font-mono text-white">{campaign.id.slice(0, 8)}…</span>
+              </span>
+              <span className="bg-[#030305] border border-[#222240] rounded-lg px-3 py-1.5">
+                Created: <span className="text-white">{new Date(campaign.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+              </span>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {/* Campaign Name */}
+            <div>
+              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
+                Campaign Name
+              </label>
+              <input
+                type="text"
+                value={settingsName}
+                onChange={e => setSettingsName(e.target.value)}
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                placeholder="Campaign name"
+              />
+            </div>
+
+            {/* Brief / Compliance Criteria */}
+            <div>
+              <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
+                Brief / Compliance Criteria
+              </label>
+              <textarea
+                value={settingsBrief}
+                onChange={e => setSettingsBrief(e.target.value)}
+                rows={4}
+                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors resize-none"
+                placeholder="Describe the compliance criteria for this campaign…"
+              />
+            </div>
+
+            {/* Payout + Status row */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
+                  Payout per Task (£)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={settingsPayout}
+                  onChange={e => setSettingsPayout(e.target.value)}
+                  className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                  placeholder="0.00"
+                />
               </div>
-            ))}
+              <div>
+                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">
+                  Status
+                </label>
+                <select
+                  value={settingsStatus}
+                  onChange={e => setSettingsStatus(e.target.value)}
+                  className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                  <option value="paused">Paused</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Save button + feedback */}
+          <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
+            {saveResult ? (
+              <span
+                className="text-sm font-medium"
+                style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}
+              >
+                {saveResult.msg}
+              </span>
+            ) : (
+              <span />
+            )}
+            <button
+              onClick={handleSaveSettings}
+              disabled={saving}
+              className="flex items-center gap-2 bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold px-6 py-2.5 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 text-sm"
+            >
+              {saving ? 'Saving…' : 'Save Changes'}
+            </button>
           </div>
         </div>
       )}
