@@ -30,6 +30,12 @@ type TaskHistoryItem = {
   submitted_at: string
 }
 
+type MyRank = {
+  rank: number
+  total_collectors: number
+  percentile: number
+}
+
 // ── Status badge colours ───────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
@@ -59,6 +65,44 @@ function HeroSkeleton() {
   )
 }
 
+// ── Ranking card ──────────────────────────────────────────────────────────────
+
+function rankMedal(percentile: number): string {
+  if (percentile >= 90) return '🥇'
+  if (percentile >= 75) return '🥈'
+  if (percentile >= 50) return '🥉'
+  return ''
+}
+
+function RankingCard({ myRank }: { myRank: MyRank | null | undefined }) {
+  // undefined = still loading, null = no rank yet
+  if (myRank === undefined) return null
+
+  return (
+    <View style={r.card}>
+      <Text style={r.cardLabel}>YOUR RANKING</Text>
+      {myRank === null ? (
+        <>
+          <Text style={r.unrankedTitle}>Not ranked yet</Text>
+          <Text style={r.unrankedSub}>Complete your first task to get ranked</Text>
+        </>
+      ) : (
+        <>
+          <View style={r.topRow}>
+            {rankMedal(myRank.percentile) !== '' && (
+              <Text style={r.medal}>{rankMedal(myRank.percentile)}</Text>
+            )}
+            <Text style={r.percentile}>Top {Math.round(100 - myRank.percentile + 1)}%</Text>
+          </View>
+          <Text style={r.rankDetail}>
+            #{myRank.rank} of {myRank.total_collectors} collectors
+          </Text>
+        </>
+      )}
+    </View>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function EarningsScreen() {
@@ -66,6 +110,7 @@ export default function EarningsScreen() {
 
   const [earnings, setEarnings] = useState<Earnings | null>(null)
   const [history, setHistory] = useState<TaskHistoryItem[]>([])
+  const [myRank, setMyRank] = useState<MyRank | null | undefined>(undefined) // undefined = loading
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [payoutLoading, setPayoutLoading] = useState(false)
@@ -80,15 +125,19 @@ export default function EarningsScreen() {
       return
     }
 
-    const [earningsRes, historyRes] = await Promise.all([
+    const [earningsRes, historyRes, rankRes] = await Promise.all([
       supabase.rpc('get_collector_earnings', { collector_id: user.id }),
       supabase.rpc('get_collector_task_history', { collector_id: user.id, limit_n: 20 }),
+      supabase.rpc('get_my_rank', { p_collector_id: user.id }),
     ])
 
     setEarnings(
       earningsRes.data ?? { total_earned: 0, pending_payout: 0, this_week_earned: 0 }
     )
     setHistory(historyRes.data ?? [])
+    // get_my_rank returns an array of rows; first row is the result
+    const rankRow = Array.isArray(rankRes.data) ? rankRes.data[0] : rankRes.data
+    setMyRank(rankRow ?? null)
     setLoading(false)
     setRefreshing(false)
   }, [])
@@ -197,6 +246,9 @@ export default function EarningsScreen() {
                   </View>
                 )}
               </View>
+
+              {/* Ranking card */}
+              <RankingCard myRank={myRank} />
 
               {/* History header */}
               {history.length > 0 && (
@@ -340,4 +392,25 @@ const s = StyleSheet.create({
   empty: { alignItems: 'center', padding: 48 },
   emptyTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff', marginBottom: 8 },
   emptyText: { fontSize: 14, color: '#b0b0d0', textAlign: 'center' },
+})
+
+const r = StyleSheet.create({
+  card: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    backgroundColor: '#0c0c18',
+    borderWidth: 1,
+    borderColor: '#7c6df5/40',
+    borderRadius: 20,
+    padding: 20,
+    alignItems: 'center',
+    gap: 6,
+  },
+  cardLabel: { fontSize: 11, fontWeight: '700', color: '#b0b0d0', letterSpacing: 1.5 },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  medal: { fontSize: 28 },
+  percentile: { fontSize: 36, fontWeight: '900', color: '#7c6df5', letterSpacing: -1 },
+  rankDetail: { fontSize: 14, color: '#b0b0d0', fontWeight: '600' },
+  unrankedTitle: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
+  unrankedSub: { fontSize: 13, color: '#b0b0d0', textAlign: 'center' },
 })

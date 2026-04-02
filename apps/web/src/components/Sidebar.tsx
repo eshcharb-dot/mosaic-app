@@ -1,25 +1,18 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
-function BarChart2Icon({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="18" y1="20" x2="18" y2="10" />
-      <line x1="12" y1="20" x2="12" y2="4" />
-      <line x1="6" y1="20" x2="6" y2="14" />
-    </svg>
-  )
-}
-
 const nav = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
+  { href: '/analytics', label: 'Analytics', icon: BarChart2, badge: null },
+  { href: '/stores', label: 'Stores', icon: Store, badge: null },
   { href: '/campaigns', label: 'Campaigns', icon: Megaphone, badge: null },
   { href: '/gallery', label: 'Gallery', icon: Image, badge: null },
   { href: '/alerts', label: 'Alerts', icon: Bell, badge: 3 },
-  { href: '/reports', label: 'Reports', icon: BarChart2Icon, badge: null },
+  { href: '/reports', label: 'Reports', icon: BarChart2, badge: null },
+  { href: '/collectors', label: 'Collectors', icon: Users, badge: null },
 ]
 
 export default function Sidebar({ user }: { user: any }) {
@@ -48,8 +41,10 @@ export default function Sidebar({ user }: { user: any }) {
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1">
         {nav.map(({ href, label, icon: Icon, badge }) => {
-          const active = pathname === href || (href !== '/campaigns' && pathname.startsWith(href + '/'))
+          const active = pathname === href
             || (href === '/campaigns' && (pathname === '/campaigns' || (pathname.startsWith('/campaigns/') && !pathname.startsWith('/campaigns/templates'))))
+            || (href === '/stores' && (pathname === '/stores' || pathname.startsWith('/stores/')))
+            || (href !== '/campaigns' && href !== '/stores' && pathname.startsWith(href + '/'))
           return (
             <div key={href}>
               <a href={href}

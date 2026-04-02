@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { View, StyleSheet } from 'react-native'
 import { Tabs } from 'expo-router'
-import { MapPin, Briefcase, DollarSign, User, Bell, Settings } from 'lucide-react-native'
+import { MapPin, Briefcase, DollarSign, User, Bell, Settings, Trophy } from 'lucide-react-native'
 
 // expo-notifications may not be installed yet — guard gracefully.
 function useNotificationBadge(): number {
@@ -80,6 +80,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: 'Tasks', tabBarIcon: ({ color }) => <Briefcase size={22} color={color} /> }} />
       <Tabs.Screen name="map" options={{ title: 'Nearby', tabBarIcon: ({ color }) => <MapPin size={22} color={color} /> }} />
       <Tabs.Screen name="earnings" options={{ title: 'Earnings', tabBarIcon: ({ color }) => <DollarSign size={22} color={color} /> }} />
+      <Tabs.Screen name="leaderboard" options={{ title: 'Top', tabBarIcon: ({ color }) => <Trophy size={22} color={color} /> }} />
       <Tabs.Screen
         name="notifications"
         options={{

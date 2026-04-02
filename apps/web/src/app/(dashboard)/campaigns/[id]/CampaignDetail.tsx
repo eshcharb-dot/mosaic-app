@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import StoreUpload from './StoreUpload'
@@ -420,7 +421,17 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                     key={cs.id}
                     className="grid grid-cols-[2fr_1fr_1fr_110px_80px] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-colors"
                   >
-                    <div className="font-medium text-white truncate">{cs.stores?.name ?? '—'}</div>
+                    <div className="font-medium text-white truncate">
+                      {cs.stores ? (
+                        <Link
+                          href={`/stores/${cs.store_id}`}
+                          className="hover:text-[#a89cf7] transition-colors"
+                          onClick={e => e.stopPropagation()}
+                        >
+                          {cs.stores.name}
+                        </Link>
+                      ) : '—'}
+                    </div>
                     <div className="text-sm text-[#b0b0d0]">{cs.stores?.city ?? '—'}</div>
                     <div className="text-sm text-[#b0b0d0]">{cs.stores?.retailer ?? '—'}</div>
                     <div>
