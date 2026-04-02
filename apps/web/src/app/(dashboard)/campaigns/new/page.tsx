@@ -1,12 +1,23 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Upload, MapPin, Clock } from 'lucide-react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Clock, LayoutTemplate, X, ArrowRight, Check } from 'lucide-react'
+
+interface Template {
+  id: string
+  name: string
+  category: string | null
+  brief: string | null
+  price_per_task_cents: number | null
+  description: string | null
+}
 
 export default function NewCampaignPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     name: '',
@@ -16,9 +27,54 @@ export default function NewCampaignPage() {
     sla_minutes: 30,
     price_per_task_cents: 2500,
   })
+  const [saveAsTemplate, setSaveAsTemplate] = useState(false)
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
+  const [templates, setTemplates] = useState<Template[]>([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null)
 
-  function set(key: string, val: any) {
+  function set(key: string, val: unknown) {
     setForm(f => ({ ...f, [key]: val }))
+  }
+
+  const applyTemplate = useCallback((t: Template) => {
+    setForm(f => ({
+      ...f,
+      instructions: t.brief ?? f.instructions,
+      price_per_task_cents: t.price_per_task_cents ?? f.price_per_task_cents,
+    }))
+    setAppliedTemplate(t.name)
+    setShowTemplatePicker(false)
+  }, [])
+
+  // Pre-fill from ?template=id query param
+  useEffect(() => {
+    const templateId = searchParams.get('template')
+    if (!templateId) return
+
+    supabase
+      .from('campaign_templates')
+      .select('*')
+      .eq('id', templateId)
+      .single()
+      .then(({ data }) => {
+        if (data) applyTemplate(data)
+      })
+  }, [searchParams, applyTemplate, supabase])
+
+  async function loadTemplates() {
+    setTemplatesLoading(true)
+    const res = await fetch('/api/campaigns/templates')
+    if (res.ok) {
+      const json = await res.json()
+      setTemplates((json.templates ?? []).slice(0, 4))
+    }
+    setTemplatesLoading(false)
+  }
+
+  function handleOpenTemplatePicker() {
+    setShowTemplatePicker(true)
+    loadTemplates()
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -36,8 +92,22 @@ export default function NewCampaignPage() {
       status: 'draft',
     }).select().single()
 
-    if (!error && data) router.push(`/campaigns/${data.id}`)
-    else setLoading(false)
+    if (!error && data) {
+      if (saveAsTemplate) {
+        await fetch('/api/campaigns/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: form.name,
+            brief: form.instructions,
+            price_per_task_cents: form.price_per_task_cents,
+          }),
+        })
+      }
+      router.push(`/campaigns/${data.id}`)
+    } else {
+      setLoading(false)
+    }
   }
 
   return (
@@ -45,6 +115,24 @@ export default function NewCampaignPage() {
       <div className="mb-8">
         <h1 className="text-3xl font-black text-white tracking-tight">New Campaign</h1>
         <p className="text-[#b0b0d0] mt-1">Configure your field intelligence campaign</p>
+      </div>
+
+      {/* Template bar */}
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          type="button"
+          onClick={handleOpenTemplatePicker}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50 transition-colors text-sm font-medium"
+        >
+          <LayoutTemplate size={15} />
+          Use a Template
+        </button>
+        {appliedTemplate && (
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[#7c6df5] bg-[#7c6df5]/10 border border-[#7c6df5]/25 px-3 py-1.5 rounded-lg">
+            <Check size={11} />
+            {appliedTemplate} applied
+          </span>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -99,6 +187,23 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
+        {/* Save as template */}
+        <label className="flex items-center gap-3 cursor-pointer group">
+          <div
+            onClick={() => setSaveAsTemplate(v => !v)}
+            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors flex-shrink-0 ${
+              saveAsTemplate
+                ? 'bg-[#7c6df5] border-[#7c6df5]'
+                : 'border-[#222240] group-hover:border-[#7c6df5]/50'
+            }`}
+          >
+            {saveAsTemplate && <Check size={12} className="text-white" strokeWidth={3} />}
+          </div>
+          <span className="text-sm text-[#b0b0d0] group-hover:text-white transition-colors">
+            Save as template for future campaigns
+          </span>
+        </label>
+
         <div className="flex gap-4">
           <button type="button" onClick={() => router.back()}
             className="flex-1 py-3 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50 transition-colors font-medium">
@@ -110,6 +215,53 @@ export default function NewCampaignPage() {
           </button>
         </div>
       </form>
+
+      {/* Template picker modal */}
+      {showTemplatePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowTemplatePicker(false)} />
+          <div className="relative bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-bold text-white text-lg">Recent Templates</h2>
+              <button onClick={() => setShowTemplatePicker(false)} className="text-[#b0b0d0] hover:text-white transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            {templatesLoading ? (
+              <div className="py-8 text-center text-[#b0b0d0] text-sm">Loading…</div>
+            ) : templates.length === 0 ? (
+              <div className="py-8 text-center">
+                <p className="text-[#b0b0d0] text-sm mb-4">No templates saved yet.</p>
+                <a href="/campaigns/templates" className="text-[#7c6df5] text-sm hover:underline">Browse templates →</a>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {templates.map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => applyTemplate(t)}
+                    className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border border-[#222240] hover:border-[#7c6df5]/40 hover:bg-white/[0.02] transition-colors text-left"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-medium text-white text-sm truncate">{t.name}</div>
+                      {t.category && (
+                        <div className="text-xs text-[#b0b0d0] mt-0.5">{t.category}</div>
+                      )}
+                    </div>
+                    <ArrowRight size={14} className="text-[#7c6df5] flex-shrink-0" />
+                  </button>
+                ))}
+                <div className="pt-2 text-center">
+                  <a href="/campaigns/templates" className="text-xs text-[#b0b0d0] hover:text-[#7c6df5] transition-colors">
+                    View all templates →
+                  </a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

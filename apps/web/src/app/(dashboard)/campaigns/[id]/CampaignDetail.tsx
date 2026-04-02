@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X } from 'lucide-react'
 import Badge from '@/components/ui/Badge'
 import StoreUpload from './StoreUpload'
 
@@ -52,6 +52,14 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [status, setStatus] = useState(campaign.status)
   const [activating, setActivating] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false)
+  const [templateName, setTemplateName] = useState(campaign.name)
+  const [templateCategory, setTemplateCategory] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [templateSaved, setTemplateSaved] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
 
   // Settings form state
   const [settingsName, setSettingsName] = useState(campaign.name)
@@ -135,6 +143,55 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     setTimeout(() => setExporting(false), 2000)
   }
 
+  async function handleDuplicate() {
+    setDuplicating(true)
+    try {
+      const res = await fetch(`/api/campaigns/${campaign.id}/duplicate`, { method: 'POST' })
+      const json = await res.json()
+      if (res.ok && json.id) {
+        router.push(`/campaigns/${json.id}`)
+      }
+    } finally {
+      setDuplicating(false)
+    }
+  }
+
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) return
+    setSavingTemplate(true)
+    try {
+      await fetch('/api/campaigns/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: templateName.trim(),
+          brief: campaign.brief,
+          price_per_task_cents: campaign.payout_amount ? Math.round(campaign.payout_amount * 100) : null,
+          category: templateCategory.trim() || null,
+        }),
+      })
+      setTemplateSaved(true)
+      setTimeout(() => {
+        setShowSaveTemplate(false)
+        setTemplateSaved(false)
+        setMoreOpen(false)
+      }, 1500)
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  // Close more menu on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
   const tabs: { key: Tab; label: string; icon: React.ElementType }[] = [
     { key: 'stores', label: 'Stores', icon: Store },
     { key: 'submissions', label: 'Submissions', icon: BarChart3 },
@@ -172,6 +229,34 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
               {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
           )}
+          <button
+            onClick={handleDuplicate}
+            disabled={duplicating}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50 transition-colors text-sm font-medium disabled:opacity-50"
+          >
+            <Copy size={15} />
+            {duplicating ? 'Duplicating…' : 'Duplicate'}
+          </button>
+          {/* More menu */}
+          <div className="relative" ref={moreRef}>
+            <button
+              onClick={() => setMoreOpen(v => !v)}
+              className="flex items-center justify-center w-10 h-10 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50 transition-colors"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-12 z-20 bg-[#0c0c18] border border-[#222240] rounded-xl shadow-2xl w-48 overflow-hidden">
+                <button
+                  onClick={() => { setShowSaveTemplate(true); setMoreOpen(false) }}
+                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-[#b0b0d0] hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  <LayoutTemplate size={14} />
+                  Save as Template
+                </button>
+              </div>
+            )}
+          </div>
           {status === 'draft' && (
             <button
               onClick={handleActivate}
@@ -189,6 +274,58 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
             ← Back
           </button>
         </div>
+
+        {/* Save as Template modal */}
+        {showSaveTemplate && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSaveTemplate(false)} />
+            <div className="relative bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+              <div className="flex items-center justify-between mb-5">
+                <h2 className="font-bold text-white text-lg">Save as Template</h2>
+                <button onClick={() => setShowSaveTemplate(false)} className="text-[#b0b0d0] hover:text-white transition-colors">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Template Name</label>
+                  <input
+                    type="text"
+                    value={templateName}
+                    onChange={e => setTemplateName(e.target.value)}
+                    className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                    placeholder="e.g. Standard Shelf Audit"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Category <span className="opacity-50 normal-case font-normal">(optional)</span></label>
+                  <input
+                    type="text"
+                    value={templateCategory}
+                    onChange={e => setTemplateCategory(e.target.value)}
+                    className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
+                    placeholder="e.g. shelf-audit, price-check"
+                  />
+                </div>
+              </div>
+              <div className="mt-5 flex gap-3">
+                <button
+                  onClick={() => setShowSaveTemplate(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-[#222240] text-[#b0b0d0] hover:text-white transition-colors text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveTemplate}
+                  disabled={savingTemplate || !templateName.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold text-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  {templateSaved ? 'Saved!' : savingTemplate ? 'Saving…' : 'Save Template'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stats bar */}
