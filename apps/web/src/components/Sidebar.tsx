@@ -267,6 +267,19 @@ export default function Sidebar({ user }: { user: any }) {
           <Zap size={13} />
           Slack
         </a>
+        {/* Notifications sub-item */}
+        <a
+          href="/settings/notifications"
+          className="flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5"
+          style={
+            pathname === '/settings/notifications' || pathname.startsWith('/settings/notifications/')
+              ? activeSubStyle
+              : undefined
+          }
+        >
+          <Bell size={13} />
+          Notifications
+        </a>
       </div>
 
       {/* Separator */}
