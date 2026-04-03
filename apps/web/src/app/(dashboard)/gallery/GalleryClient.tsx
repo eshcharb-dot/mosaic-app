@@ -1,5 +1,5 @@
 'use client'
-import { useState, useMemo, useRef, memo } from 'react'
+import { useState, useMemo, useRef, memo, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
 import { X, RefreshCw, CheckCircle, XCircle, Clock, Search, ChevronDown, SlidersHorizontal, GitCompareArrows, Share2 } from 'lucide-react'
@@ -79,7 +79,7 @@ function relativeTime(iso: string | null): string {
 function ScoreBadge({ score, isCompliant }: { score: number | null; isCompliant: boolean | null }) {
   if (score === null) {
     return (
-      <span className="flex items-center gap-1 bg-[#222240] text-[#b0b0d0] text-xs font-bold px-2 py-1 rounded-lg">
+      <span className="flex items-center gap-1 bg-[#222240] text-[var(--text-muted)] text-xs font-bold px-2 py-1 rounded-lg">
         <Clock size={10} />
         Pending
       </span>
@@ -126,7 +126,7 @@ function ScoreRing({ score, isCompliant }: { score: number | null; isCompliant: 
         <div className="text-2xl font-black" style={{ color }}>
           {score !== null ? Math.round(score) : '—'}
         </div>
-        {score !== null && <div className="text-[10px] text-[#b0b0d0]">/ 100</div>}
+        {score !== null && <div className="text-[10px] text-[var(--text-muted)]">/ 100</div>}
       </div>
     </div>
   )
@@ -142,6 +142,30 @@ function SubmissionModal({
   const [rescoring, setRescoring] = useState(false)
   const [rescored, setRescored] = useState(false)
   const [rescoreError, setRescoreError] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  // Focus first focusable element when modal opens
+  useEffect(() => {
+    closeButtonRef.current?.focus()
+  }, [])
+
+  // Escape closes; Tab traps focus within modal
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { onClose(); return }
+    if (e.key !== 'Tab') return
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
+    if (!focusable || focusable.length === 0) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus() }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus() }
+    }
+  }, [onClose])
 
   async function handleRescore() {
     setRescoring(true)
@@ -158,6 +182,7 @@ function SubmissionModal({
   }
 
   const findings: string[] = Array.isArray(sub.findings) ? sub.findings : []
+  const scoreLabel = sub.score !== null ? `${Math.round(sub.score)}/100` : 'pending'
 
   return (
     <div
@@ -168,31 +193,38 @@ function SubmissionModal({
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
       <div
-        className="relative z-10 bg-[#0c0c18] border border-[#222240] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Submission detail"
+        className="relative z-10 bg-[var(--card)] border border-[var(--border)] rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl"
         onClick={e => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
       >
         {/* Close */}
         <button
+          ref={closeButtonRef}
           onClick={onClose}
-          className="absolute top-4 right-4 text-[#b0b0d0] hover:text-white transition-colors z-10 bg-[#030305] rounded-lg p-1.5"
+          aria-label="Close submission detail"
+          className="absolute top-4 right-4 text-[var(--text-muted)] hover:text-white transition-colors z-10 bg-[var(--bg)] rounded-lg p-1.5"
         >
-          <X size={18} />
+          <X size={18} aria-hidden="true" />
         </button>
 
         {/* Photo */}
         {sub.photo_url ? (
-          <div className="relative w-full aspect-video bg-[#030305] rounded-t-2xl overflow-hidden">
+          <div className="relative w-full aspect-video bg-[var(--bg)] rounded-t-2xl overflow-hidden">
             <Image
               src={sub.photo_url}
-              alt={sub.store_name ?? 'Submission'}
+              alt={`${sub.store_name ?? 'Store'} shelf photo, compliance score ${scoreLabel}`}
               fill
               className="object-cover"
               unoptimized
             />
           </div>
         ) : (
-          <div className="w-full aspect-video bg-[#030305] rounded-t-2xl flex items-center justify-center">
-            <span className="text-[#b0b0d0] text-sm">No photo</span>
+          <div className="w-full aspect-video bg-[var(--bg)] rounded-t-2xl flex items-center justify-center">
+            <span className="text-[var(--text-muted)] text-sm">No photo</span>
           </div>
         )}
 
@@ -204,30 +236,30 @@ function SubmissionModal({
               <div className="flex items-center gap-2 mb-2">
                 {sub.is_compliant === true && (
                   <span className="flex items-center gap-1 text-xs font-bold text-[#00e096] bg-[#00e096]/10 border border-[#00e096]/25 px-2 py-0.5 rounded-full">
-                    <CheckCircle size={11} /> COMPLIANT
+                    <CheckCircle size={11} aria-hidden="true" /> COMPLIANT
                   </span>
                 )}
                 {sub.is_compliant === false && (
                   <span className="flex items-center gap-1 text-xs font-bold text-[#ff4d6d] bg-[#ff4d6d]/10 border border-[#ff4d6d]/25 px-2 py-0.5 rounded-full">
-                    <XCircle size={11} /> NON-COMPLIANT
+                    <XCircle size={11} aria-hidden="true" /> NON-COMPLIANT
                   </span>
                 )}
                 {sub.is_compliant === null && (
-                  <span className="flex items-center gap-1 text-xs font-bold text-[#b0b0d0] bg-[#222240] px-2 py-0.5 rounded-full">
-                    <Clock size={11} /> PENDING
+                  <span className="flex items-center gap-1 text-xs font-bold text-[var(--text-muted)] bg-[#222240] px-2 py-0.5 rounded-full">
+                    <Clock size={11} aria-hidden="true" /> PENDING
                   </span>
                 )}
               </div>
               <div className="text-white font-bold text-lg leading-tight truncate">{sub.store_name ?? 'Unknown store'}</div>
-              <div className="text-[#b0b0d0] text-sm">{sub.campaign_name ?? '—'}</div>
-              <div className="text-[#b0b0d0] text-xs mt-1">{relativeTime(sub.submitted_at)}</div>
+              <div className="text-[var(--text-muted)] text-sm">{sub.campaign_name ?? '—'}</div>
+              <div className="text-[var(--text-muted)] text-xs mt-1">{relativeTime(sub.submitted_at)}</div>
             </div>
           </div>
 
           {/* Summary */}
           {sub.summary && (
-            <div className="bg-[#030305] border border-[#222240] rounded-xl p-4">
-              <div className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">AI Summary</div>
+            <div className="bg-[var(--bg)] border border-[var(--border)] rounded-xl p-4">
+              <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-2">AI Summary</div>
               <p className="text-white text-sm leading-relaxed">{sub.summary}</p>
             </div>
           )}
@@ -235,11 +267,11 @@ function SubmissionModal({
           {/* Findings */}
           {findings.length > 0 && (
             <div>
-              <div className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-3">Findings</div>
+              <div className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">Findings</div>
               <ul className="space-y-2">
                 {findings.map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm text-white">
-                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#7c6df5] flex-shrink-0" />
+                    <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-[#7c6df5] flex-shrink-0" aria-hidden="true" />
                     {f}
                   </li>
                 ))}
@@ -248,21 +280,22 @@ function SubmissionModal({
           )}
 
           {/* Rescore */}
-          <div className="pt-2 border-t border-[#222240]">
+          <div className="pt-2 border-t border-[var(--border)]">
             {rescored ? (
-              <p className="text-[#00e096] text-sm font-medium">Re-score queued. Refresh shortly.</p>
+              <p role="status" className="text-[#00e096] text-sm font-medium">Re-score queued. Refresh shortly.</p>
             ) : (
               <button
                 onClick={handleRescore}
                 disabled={rescoring}
+                aria-label="Re-score this submission"
                 className="flex items-center gap-2 bg-[#7c6df5]/15 border border-[#7c6df5]/30 hover:bg-[#7c6df5]/25 text-[#7c6df5] font-semibold text-sm px-4 py-2.5 rounded-xl transition-colors disabled:opacity-50"
               >
-                <RefreshCw size={15} className={rescoring ? 'animate-spin' : ''} />
+                <RefreshCw size={15} className={rescoring ? 'animate-spin' : ''} aria-hidden="true" />
                 {rescoring ? 'Scoring…' : 'Re-score with AI'}
               </button>
             )}
             {rescoreError && (
-              <p className="text-[#ff4d6d] text-xs mt-2">{rescoreError}</p>
+              <p role="alert" className="text-[#ff4d6d] text-xs mt-2">{rescoreError}</p>
             )}
           </div>
         </div>
@@ -292,6 +325,9 @@ const SubmissionCard = memo(function SubmissionCard({
     : 'rgba(255,77,109,0.3)'
   const borderColor = compareSlot === 'A' ? '#a855f7' : compareSlot === 'B' ? '#06b6d4' : baseBorderColor
 
+  const scoreLabel = sub.score !== null ? `score ${Math.round(sub.score)}` : 'pending score'
+  const cardAriaLabel = `View submission from ${sub.store_name ?? 'unknown store'}, ${scoreLabel}`
+
   function handleClick() {
     if (compareMode && onCompareSelect) {
       onCompareSelect(sub)
@@ -300,9 +336,20 @@ const SubmissionCard = memo(function SubmissionCard({
     }
   }
 
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleClick()
+    }
+  }
+
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={cardAriaLabel}
       onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className="group bg-[#0c0c18] rounded-2xl overflow-hidden cursor-pointer transition-transform hover:-translate-y-0.5 relative"
       style={{ border: `2px solid ${borderColor}` }}
     >
@@ -316,17 +363,17 @@ const SubmissionCard = memo(function SubmissionCard({
         </div>
       )}
       {/* Photo */}
-      <div className="relative aspect-square overflow-hidden bg-[#030305]">
+      <div className="relative aspect-square overflow-hidden bg-[var(--bg)]">
         {sub.photo_url ? (
           <Image
             src={sub.photo_url}
-            alt={sub.store_name ?? 'Submission'}
+            alt={`${sub.store_name ?? 'Store'} shelf photo, compliance score ${sub.score !== null ? `${Math.round(sub.score)}/100` : 'pending'}`}
             fill
             className="object-cover transition-transform duration-300 group-hover:scale-105"
             unoptimized
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-[#b0b0d0] text-xs">
+          <div className="w-full h-full flex items-center justify-center text-[var(--text-muted)] text-xs">
             No photo
           </div>
         )}
@@ -337,7 +384,7 @@ const SubmissionCard = memo(function SubmissionCard({
         </div>
 
         {/* Hover overlay: score + findings */}
-        <div className="absolute inset-0 bg-[#030305]/90 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center p-4 gap-2">
+        <div className="absolute inset-0 bg-[var(--bg)]/90 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center p-4 gap-2">
           {sub.score !== null && (
             <div
               className="text-5xl font-black"
@@ -347,7 +394,7 @@ const SubmissionCard = memo(function SubmissionCard({
             </div>
           )}
           {findings.length > 0 && (
-            <ul className="text-xs text-[#b0b0d0] space-y-1 text-center max-h-24 overflow-hidden">
+            <ul className="text-xs text-[var(--text-muted)] space-y-1 text-center max-h-24 overflow-hidden">
               {findings.slice(0, 3).map((f, i) => (
                 <li key={i} className="truncate">{f}</li>
               ))}
@@ -357,7 +404,7 @@ const SubmissionCard = memo(function SubmissionCard({
             </ul>
           )}
           {sub.score === null && (
-            <span className="text-[#b0b0d0] text-sm">Not yet scored</span>
+            <span className="text-[var(--text-muted)] text-sm">Not yet scored</span>
           )}
         </div>
       </div>
@@ -365,8 +412,8 @@ const SubmissionCard = memo(function SubmissionCard({
       {/* Info */}
       <div className="p-3">
         <div className="font-semibold text-white text-sm truncate">{sub.store_name ?? 'Unknown store'}</div>
-        <div className="text-[#b0b0d0] text-xs truncate mt-0.5">{sub.campaign_name ?? '—'}</div>
-        <div className="text-[#b0b0d0] text-xs mt-1 opacity-60">{relativeTime(sub.submitted_at)}</div>
+        <div className="text-[var(--text-muted)] text-xs truncate mt-0.5">{sub.campaign_name ?? '—'}</div>
+        <div className="text-[var(--text-muted)] text-xs mt-1 opacity-60">{relativeTime(sub.submitted_at)}</div>
       </div>
     </div>
   )
@@ -537,7 +584,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-3xl font-black text-white tracking-tight">Gallery</h1>
-          <p className="text-[#b0b0d0] mt-1">
+          <p className="text-[var(--text-muted)] mt-1">
             {submissions.length} submission{submissions.length !== 1 ? 's' : ''} · AI compliance scores
           </p>
         </div>
@@ -547,7 +594,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors border ${
               compareMode
                 ? 'bg-[#a855f7]/15 border-[#a855f7]/40 text-[#a855f7]'
-                : 'bg-[#0c0c18] border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50'
+                : 'bg-[#0c0c18] border-[var(--border)] text-[var(--text-muted)] hover:text-white hover:border-[#7c6df5]/50'
             }`}
           >
             <GitCompareArrows size={15} />
@@ -576,13 +623,14 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
         {/* Primary row */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
             <input
               type="text"
               placeholder="Search by store…"
+              aria-label="Search submissions by store name"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl pl-9 pr-4 py-2.5 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/50"
+              className="w-full bg-[var(--card)] border border-[var(--border)] rounded-xl pl-9 pr-4 py-2.5 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[var(--text-muted)]/50"
             />
           </div>
 
@@ -590,28 +638,30 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
             <select
               value={campaignFilter}
               onChange={e => setCampaignFilter(e.target.value)}
-              className="appearance-none bg-[#0c0c18] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+              aria-label="Filter by campaign"
+              className="appearance-none bg-[var(--card)] border border-[var(--border)] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
             >
               <option value="all">All campaigns</option>
               {campaigns.map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
           </div>
 
           <div className="relative">
             <select
               value={sortOrder}
               onChange={e => setSortOrder(e.target.value as SortOrder)}
-              className="appearance-none bg-[#0c0c18] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+              aria-label="Sort order"
+              className="appearance-none bg-[var(--card)] border border-[var(--border)] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
             >
               <option value="newest">Newest First</option>
               <option value="oldest">Oldest First</option>
               <option value="score-desc">Highest Score</option>
               <option value="score-asc">Lowest Score</option>
             </select>
-            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
           </div>
 
           <button
@@ -619,7 +669,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
             className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors border ${
               showAdvanced
                 ? 'bg-[#7c6df5]/15 border-[#7c6df5]/40 text-[#a89cf7]'
-                : 'bg-[#0c0c18] border-[#222240] text-[#b0b0d0] hover:text-white'
+                : 'bg-[#0c0c18] border-[var(--border)] text-[var(--text-muted)] hover:text-white'
             }`}
           >
             <SlidersHorizontal size={14} />
@@ -630,7 +680,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
           {!isDefaultFilters && (
             <button
               onClick={clearAll}
-              className="text-xs text-[#b0b0d0] hover:text-[#ff4d6d] transition-colors font-medium px-2"
+              className="text-xs text-[var(--text-muted)] hover:text-[#ff4d6d] transition-colors font-medium px-2"
             >
               Clear all
             </button>
@@ -638,7 +688,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
         </div>
 
         {/* Status tabs */}
-        <div className="flex items-center gap-1 bg-[#0c0c18] border border-[#222240] rounded-xl p-1 w-fit">
+        <div className="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded-xl p-1 w-fit">
           {(
             [
               { key: 'all', label: 'All' },
@@ -653,11 +703,11 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
                 statusFilter === key
                   ? 'bg-[#7c6df5] text-white'
-                  : 'text-[#b0b0d0] hover:text-white'
+                  : 'text-[var(--text-muted)] hover:text-white'
               }`}
             >
               {label}
-              <span className={`ml-1.5 text-[10px] ${statusFilter === key ? 'text-white/60' : 'text-[#b0b0d0]/50'}`}>
+              <span className={`ml-1.5 text-[10px] ${statusFilter === key ? 'text-white/60' : 'text-[var(--text-muted)]/50'}`}>
                 {statusCounts[key]}
               </span>
             </button>
@@ -666,30 +716,30 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
 
         {/* Advanced filter panel */}
         {showAdvanced && (
-          <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">From Date</label>
+              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">From Date</label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={e => setDateFrom(e.target.value)}
-                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">To Date</label>
+              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">To Date</label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={e => setDateTo(e.target.value)}
-                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors [color-scheme:dark]"
               />
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Score Range</label>
+                <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Score Range</label>
                 <span className="text-xs text-[#7c6df5] font-mono font-bold">{scoreMin}–{scoreMax}</span>
               </div>
               <div className="pt-2 pb-1">
@@ -698,21 +748,21 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
                   onMinChange={setScoreMin} onMaxChange={setScoreMax}
                 />
               </div>
-              <div className="flex justify-between text-[10px] text-[#b0b0d0]/50">
+              <div className="flex justify-between text-[10px] text-[var(--text-muted)]/50">
                 <span>0</span><span>100</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Collector ID</label>
+              <label className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Collector ID</label>
               <input
                 type="text"
                 value={collectorFilter}
                 onChange={e => setCollectorFilter(e.target.value)}
                 placeholder="ID prefix…"
-                className="w-full bg-[#030305] border border-[#222240] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/40 font-mono"
+                className="w-full bg-[var(--bg)] border border-[var(--border)] rounded-xl px-3 py-2 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[var(--text-muted)]/40 font-mono"
               />
-              <p className="text-[10px] text-[#b0b0d0]/40">Anonymized submission ID prefix</p>
+              <p className="text-[10px] text-[var(--text-muted)]/40">Anonymized submission ID prefix</p>
             </div>
           </div>
         )}
@@ -721,7 +771,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
       {/* Grid */}
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-[#0c0c18] border border-[#222240] flex items-center justify-center mb-4">
+          <div className="w-16 h-16 rounded-2xl bg-[var(--card)] border border-[var(--border)] flex items-center justify-center mb-4">
             <svg viewBox="0 0 24 24" fill="none" stroke="#b0b0d0" strokeWidth="1.5" className="w-8 h-8" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" />
               <circle cx="8.5" cy="8.5" r="1.5" />
@@ -731,7 +781,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
           {submissions.length === 0 ? (
             <>
               <p className="text-white font-semibold text-lg">No submissions yet</p>
-              <p className="text-[#b0b0d0] text-sm mt-1">Activate a campaign to start collecting.</p>
+              <p className="text-[var(--text-muted)] text-sm mt-1">Activate a campaign to start collecting.</p>
               <a
                 href="/campaigns"
                 className="mt-5 inline-block bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white text-sm font-bold px-5 py-2.5 rounded-xl"
@@ -742,7 +792,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
           ) : (
             <>
               <p className="text-white font-semibold text-lg">No matches</p>
-              <p className="text-[#b0b0d0] text-sm mt-1">Try adjusting your filters.</p>
+              <p className="text-[var(--text-muted)] text-sm mt-1">Try adjusting your filters.</p>
               <button
                 onClick={clearAll}
                 className="mt-4 text-[#7c6df5] text-sm font-semibold hover:underline"
@@ -777,7 +827,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
 
       {/* Compare panel — slides in from bottom */}
       {compareMode && compareA && compareB && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#080810] border-t border-[#222240] shadow-2xl animate-in slide-in-from-bottom duration-300">
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#080810] border-t border-[var(--border)] shadow-2xl animate-in slide-in-from-bottom duration-300">
           <div className="max-w-6xl mx-auto p-6 space-y-5">
             {/* Panel header */}
             <div className="flex items-center justify-between">
@@ -809,13 +859,13 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
                 </button>
                 <button
                   onClick={clearCompare}
-                  className="text-xs text-[#b0b0d0] hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg border border-[#222240]"
+                  className="text-xs text-[var(--text-muted)] hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg border border-[var(--border)]"
                 >
                   Clear comparison
                 </button>
                 <button
                   onClick={exitCompareMode}
-                  className="text-[#b0b0d0] hover:text-white transition-colors p-1.5 rounded-lg border border-[#222240]"
+                  className="text-[var(--text-muted)] hover:text-white transition-colors p-1.5 rounded-lg border border-[var(--border)]"
                 >
                   <X size={14} />
                 </button>
@@ -827,7 +877,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
               <div className="bg-[#0c0c18] border border-[#a855f7]/30 rounded-xl p-3">
                 <div className="text-[10px] text-[#a855f7] font-bold uppercase tracking-widest mb-1">Photo A</div>
                 <div className="font-bold text-white truncate">{compareA.store_name ?? 'Unknown'}</div>
-                <div className="text-[#b0b0d0] text-xs">{compareA.campaign_name ?? '—'}</div>
+                <div className="text-[var(--text-muted)] text-xs">{compareA.campaign_name ?? '—'}</div>
                 {compareA.score != null && (
                   <div className="text-2xl font-black mt-1" style={{ color: compareA.is_compliant ? '#00e096' : '#ff6b9d' }}>
                     {Math.round(compareA.score)}
@@ -837,7 +887,7 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
               <div className="bg-[#0c0c18] border border-[#06b6d4]/30 rounded-xl p-3">
                 <div className="text-[10px] text-[#06b6d4] font-bold uppercase tracking-widest mb-1">Photo B</div>
                 <div className="font-bold text-white truncate">{compareB.store_name ?? 'Unknown'}</div>
-                <div className="text-[#b0b0d0] text-xs">{compareB.campaign_name ?? '—'}</div>
+                <div className="text-[var(--text-muted)] text-xs">{compareB.campaign_name ?? '—'}</div>
                 {compareB.score != null && (
                   <div className="text-2xl font-black mt-1" style={{ color: compareB.is_compliant ? '#00e096' : '#ff6b9d' }}>
                     {Math.round(compareB.score)}
@@ -864,15 +914,15 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
                 <div className="bg-[#030505] border border-[#00e09625] rounded-xl p-3">
                   <div className="text-[#00e096] font-semibold uppercase tracking-wider mb-2">Only in A ({findingsDiff.resolved.length})</div>
                   {findingsDiff.resolved.length === 0
-                    ? <p className="text-[#b0b0d0] italic">None</p>
-                    : <ul className="space-y-1">{findingsDiff.resolved.map((f, i) => <li key={i} className="text-[#b0b0d0] flex gap-1.5"><span className="text-[#00e096]">✓</span>{f}</li>)}</ul>
+                    ? <p className="text-[var(--text-muted)] italic">None</p>
+                    : <ul className="space-y-1">{findingsDiff.resolved.map((f, i) => <li key={i} className="text-[var(--text-muted)] flex gap-1.5"><span className="text-[#00e096]">✓</span>{f}</li>)}</ul>
                   }
                 </div>
                 <div className="bg-[#030505] border border-[#ff6b9d25] rounded-xl p-3">
                   <div className="text-[#ff6b9d] font-semibold uppercase tracking-wider mb-2">Only in B ({findingsDiff.appeared.length})</div>
                   {findingsDiff.appeared.length === 0
-                    ? <p className="text-[#b0b0d0] italic">None</p>
-                    : <ul className="space-y-1">{findingsDiff.appeared.map((f, i) => <li key={i} className="text-[#b0b0d0] flex gap-1.5"><span className="text-[#ff6b9d]">!</span>{f}</li>)}</ul>
+                    ? <p className="text-[var(--text-muted)] italic">None</p>
+                    : <ul className="space-y-1">{findingsDiff.appeared.map((f, i) => <li key={i} className="text-[var(--text-muted)] flex gap-1.5"><span className="text-[#ff6b9d]">!</span>{f}</li>)}</ul>
                   }
                 </div>
               </div>

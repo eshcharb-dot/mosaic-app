@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import Sidebar from '@/components/Sidebar'
 import CommandPaletteProvider from '@/components/CommandPaletteProvider'
 import BrandProvider from '@/components/BrandProvider'
+import { I18nProvider } from '@/components/I18nProvider'
 import { DEFAULT_BRAND, type BrandConfig } from '@/lib/branding'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -38,13 +39,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
 
   return (
-    <CommandPaletteProvider>
-      <BrandProvider brand={brand}>
-        <div className="flex min-h-screen bg-[#030305]">
-          <Sidebar user={user} />
-          <main className="flex-1 overflow-auto">{children}</main>
-        </div>
-      </BrandProvider>
-    </CommandPaletteProvider>
+    <I18nProvider>
+      <CommandPaletteProvider>
+        <BrandProvider brand={brand}>
+          <div className="flex min-h-screen" style={{ background: 'var(--bg)' }}>
+            <a href="#main-content" className="skip-link">Skip to main content</a>
+            <Sidebar user={user} />
+            <main id="main-content" className="flex-1 overflow-auto">{children}</main>
+          </div>
+        </BrandProvider>
+      </CommandPaletteProvider>
+    </I18nProvider>
   )
 }

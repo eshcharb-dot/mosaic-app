@@ -94,11 +94,11 @@ function SectionCard({ title, subtitle, icon: Icon, children }: {
   children: React.ReactNode
 }) {
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6">
+    <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-lg font-bold text-white">{title}</h2>
-          {subtitle && <p className="text-[#b0b0d0] text-sm mt-0.5">{subtitle}</p>}
+          <h2 className="text-lg font-bold text-[var(--text)]">{title}</h2>
+          {subtitle && <p className="text-[var(--text-muted)] text-sm mt-0.5">{subtitle}</p>}
         </div>
         {Icon && <Icon size={18} className="text-[#7c6df5]" />}
       </div>
@@ -110,9 +110,9 @@ function SectionCard({ title, subtitle, icon: Icon, children }: {
 const DistributionTooltip = memo(function DistributionTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
-      <div className="text-[#b0b0d0] mb-1">{label}</div>
-      <div className="text-white font-bold text-sm">{payload[0].value} stores</div>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[var(--text-muted)] mb-1">{label}</div>
+      <div className="text-[var(--text)] font-bold text-sm">{payload[0].value} stores</div>
     </div>
   )
 })
@@ -120,9 +120,9 @@ const DistributionTooltip = memo(function DistributionTooltip({ active, payload,
 const TierTooltip = memo(function TierTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
-      <div className="text-[#b0b0d0] mb-1">{label}</div>
-      <div className="text-white font-bold text-sm">{payload[0].value} collectors</div>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[var(--text-muted)] mb-1">{label}</div>
+      <div className="text-[var(--text)] font-bold text-sm">{payload[0].value} collectors</div>
     </div>
   )
 })
@@ -131,9 +131,9 @@ const TrendTooltip = memo(function TrendTooltip({ active, payload, label }: any)
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload as TrendPoint
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
-      <div className="text-[#b0b0d0] mb-1">{label}</div>
-      <div className="text-white font-bold text-sm">{Math.round(d?.avg_score ?? 0)}% avg score</div>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[var(--text-muted)] mb-1">{label}</div>
+      <div className="text-[var(--text)] font-bold text-sm">{Math.round(d?.avg_score ?? 0)}% avg score</div>
       <div className="text-[#7c6df5]">{d?.compliant ?? 0} / {d?.total ?? 0} compliant</div>
     </div>
   )
@@ -142,8 +142,8 @@ const TrendTooltip = memo(function TrendTooltip({ active, payload, label }: any)
 const CampaignTooltip = memo(function CampaignTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
-      <div className="text-[#b0b0d0] mb-1">{label}</div>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div className="text-[var(--text-muted)] mb-1">{label}</div>
       {payload.map((p: any) => (
         <div key={p.dataKey} style={{ color: p.color }} className="font-bold">
           {p.name}: {p.value}%
@@ -156,7 +156,7 @@ const CampaignTooltip = memo(function CampaignTooltip({ active, payload, label }
 const StoresTable = memo(function StoresTable({ stores, mode }: { stores: StoreRow[]; mode: 'top' | 'bottom' }) {
   if (stores.length === 0) {
     return (
-      <div className="text-center py-10 text-[#b0b0d0] text-sm">No data available yet</div>
+      <div className="text-center py-10 text-[var(--text-muted)] text-sm">No data available yet</div>
     )
   }
   return (
@@ -168,7 +168,7 @@ const StoresTable = memo(function StoresTable({ stores, mode }: { stores: StoreR
         return (
           <div
             key={s.store_name}
-            className="flex items-center gap-3 p-3 bg-[#030305] border border-[#222240] rounded-xl"
+            className="flex items-center gap-3 p-3 bg-[var(--bg)] border border-[var(--border)] rounded-xl"
           >
             {/* Rank badge */}
             <div
@@ -184,8 +184,8 @@ const StoresTable = memo(function StoresTable({ stores, mode }: { stores: StoreR
 
             {/* Name */}
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-white truncate">{s.store_name}</div>
-              <div className="text-xs text-[#b0b0d0]">{s.submission_count} submission{s.submission_count !== 1 ? 's' : ''}</div>
+              <div className="text-sm font-medium text-[var(--text)] truncate">{s.store_name}</div>
+              <div className="text-xs text-[var(--text-muted)]">{s.submission_count} submission{s.submission_count !== 1 ? 's' : ''}</div>
             </div>
 
             {/* Score + label */}
@@ -218,7 +218,7 @@ function TierDistribution({ data }: { data: TierDistRow[] }) {
 
   if (chartData.every(d => d.count === 0)) {
     return (
-      <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">
+      <div className="h-48 flex items-center justify-center text-[var(--text-muted)] text-sm">
         No tier data available yet
       </div>
     )
@@ -231,16 +231,16 @@ function TierDistribution({ data }: { data: TierDistRow[] }) {
       {/* Bar chart */}
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
+          <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
           <XAxis
             dataKey="name"
-            tick={{ fill: '#b0b0d0', fontSize: 12 }}
+            tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
             allowDecimals={false}
-            tick={{ fill: '#b0b0d0', fontSize: 11 }}
+            tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             width={28}
@@ -316,20 +316,20 @@ export default function AnalyticsClient({
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Analytics</h1>
-          <p className="text-[#b0b0d0] mt-1">Deep compliance insights across campaigns and stores</p>
+          <h1 className="text-3xl font-black text-[var(--text)] tracking-tight">Analytics</h1>
+          <p className="text-[var(--text-muted)] mt-1">Deep compliance insights across campaigns and stores</p>
         </div>
 
         {/* Date range selector — visual only */}
-        <div className="flex items-center gap-1 bg-[#0c0c18] border border-[#222240] rounded-xl p-1">
+        <div className="flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded-xl p-1">
           {DATE_RANGES.map(r => (
             <button
               key={r}
               onClick={() => setActiveRange(r)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 activeRange === r
-                  ? 'bg-[#7c6df5] text-white'
-                  : 'text-[#b0b0d0] hover:text-white hover:bg-white/5'
+                  ? 'bg-[#7c6df5] text-[var(--text)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text)] hover:bg-white/5'
               }`}
             >
               {r}
@@ -346,34 +346,45 @@ export default function AnalyticsClient({
           icon={BarChart3}
         >
           {distData.every(d => d.count === 0) ? (
-            <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">
+            <div className="h-48 flex items-center justify-center text-[var(--text-muted)] text-sm">
               No compliance data available yet
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={distData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
-                <XAxis
-                  dataKey="range"
-                  tick={{ fill: '#b0b0d0', fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fill: '#b0b0d0', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={32}
-                />
-                <Tooltip content={<DistributionTooltip />} cursor={{ fill: '#ffffff08' }} />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                  {distData.map(entry => (
-                    <Cell key={entry.range} fill={bucketColor(entry.range)} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            <div aria-label="Score distribution bar chart">
+              <div className="sr-only" aria-label="Chart data table">
+                <table>
+                  <caption>Compliance score distribution — stores per bracket</caption>
+                  <thead><tr><th scope="col">Score range</th><th scope="col">Store count</th></tr></thead>
+                  <tbody>
+                    {distData.map(d => <tr key={d.range}><td>{d.range}</td><td>{d.count}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart data={distData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                  <XAxis
+                    dataKey="range"
+                    tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={32}
+                  />
+                  <Tooltip content={<DistributionTooltip />} cursor={{ fill: '#ffffff08' }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {distData.map(entry => (
+                      <Cell key={entry.range} fill={bucketColor(entry.range)} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </SectionCard>
       </div>
@@ -405,7 +416,7 @@ export default function AnalyticsClient({
           icon={BarChart3}
         >
           {campData.length === 0 ? (
-            <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">
+            <div className="h-48 flex items-center justify-center text-[var(--text-muted)] text-sm">
               No campaign data available yet
             </div>
           ) : campData.length === 1 ? (
@@ -417,8 +428,8 @@ export default function AnalyticsClient({
               ].map(({ label, value, color }) => (
                 <div key={label}>
                   <div className="flex justify-between text-sm mb-1.5">
-                    <span className="text-[#b0b0d0]">{campData[0].name} — {label}</span>
-                    <span className="font-bold text-white">{value}%</span>
+                    <span className="text-[var(--text-muted)]">{campData[0].name} — {label}</span>
+                    <span className="font-bold text-[var(--text)]">{value}%</span>
                   </div>
                   <div className="h-3 bg-[#1a1a30] rounded-full overflow-hidden">
                     <div
@@ -436,11 +447,11 @@ export default function AnalyticsClient({
                 layout="vertical"
                 margin={{ top: 4, right: 16, bottom: 0, left: 8 }}
               >
-                <CartesianGrid stroke="#222240" strokeDasharray="4 4" horizontal={false} />
+                <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" horizontal={false} />
                 <XAxis
                   type="number"
                   domain={[0, 100]}
-                  tick={{ fill: '#b0b0d0', fontSize: 11 }}
+                  tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
                   axisLine={false}
                   tickLine={false}
                   tickFormatter={v => `${v}%`}
@@ -448,7 +459,7 @@ export default function AnalyticsClient({
                 <YAxis
                   type="category"
                   dataKey="name"
-                  tick={{ fill: '#b0b0d0', fontSize: 12 }}
+                  tick={{ fill: 'var(--text-muted)', fontSize: 12 }}
                   axisLine={false}
                   tickLine={false}
                   width={120}
@@ -470,49 +481,60 @@ export default function AnalyticsClient({
           icon={TrendingUp}
         >
           {trendData.length === 0 ? (
-            <div className="h-56 flex items-center justify-center text-[#b0b0d0] text-sm">
+            <div className="h-56 flex items-center justify-center text-[var(--text-muted)] text-sm">
               No trend data available yet
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={trendData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#7c6df5" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#7c6df5" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
-                <XAxis
-                  dataKey="dateLabel"
-                  tick={{ fill: '#b0b0d0', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tick={{ fill: '#b0b0d0', fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={v => `${v}%`}
-                  width={38}
-                />
-                <Tooltip
-                  content={<TrendTooltip />}
-                  cursor={{ stroke: '#7c6df5', strokeWidth: 1, strokeDasharray: '4 4' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="compliancePct"
-                  stroke="#7c6df5"
-                  strokeWidth={2.5}
-                  fill="url(#trendGradient)"
-                  dot={{ r: 4, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            <div aria-label="30-day compliance trend area chart">
+              <div className="sr-only" aria-label="Chart data table">
+                <table>
+                  <caption>30-day compliance trend — % of audits passing per day</caption>
+                  <thead><tr><th scope="col">Date</th><th scope="col">Compliance %</th><th scope="col">Total</th><th scope="col">Compliant</th></tr></thead>
+                  <tbody>
+                    {trendData.map(d => <tr key={d.date}><td>{d.dateLabel}</td><td>{d.compliancePct}%</td><td>{d.total}</td><td>{d.compliant}</td></tr>)}
+                  </tbody>
+                </table>
+              </div>
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={trendData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#7c6df5" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#7c6df5" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                  <XAxis
+                    dataKey="dateLabel"
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={v => `${v}%`}
+                    width={38}
+                  />
+                  <Tooltip
+                    content={<TrendTooltip />}
+                    cursor={{ stroke: '#7c6df5', strokeWidth: 1, strokeDasharray: '4 4' }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="compliancePct"
+                    stroke="#7c6df5"
+                    strokeWidth={2.5}
+                    fill="url(#trendGradient)"
+                    dot={{ r: 4, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }}
+                    activeDot={{ r: 6, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           )}
         </SectionCard>
       </div>

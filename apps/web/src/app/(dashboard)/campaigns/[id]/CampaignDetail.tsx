@@ -1055,18 +1055,22 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Campaign Name</label>
+                <label htmlFor="settings-name" className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Campaign Name</label>
                 <input
+                  id="settings-name"
                   type="text"
                   value={settingsName}
                   onChange={e => setSettingsName(e.target.value)}
+                  aria-required="true"
+                  aria-describedby={saveResult && !saveResult.ok ? 'settings-save-error' : undefined}
                   className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm placeholder-[#b0b0d0]/50 focus:outline-none focus:border-[#7c6df5]/60 transition-colors"
                   placeholder="Campaign name"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Brief / Compliance Criteria</label>
+                <label htmlFor="settings-brief" className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Brief / Compliance Criteria</label>
                 <textarea
+                  id="settings-brief"
                   value={settingsBrief}
                   onChange={e => setSettingsBrief(e.target.value)}
                   rows={4}
@@ -1076,8 +1080,9 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Payout per Task (£)</label>
+                  <label htmlFor="settings-payout" className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Payout per Task (£)</label>
                   <input
+                    id="settings-payout"
                     type="number"
                     min="0"
                     step="0.01"
@@ -1088,10 +1093,12 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Status</label>
+                  <label htmlFor="settings-status" className="block text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-2">Status</label>
                   <select
+                    id="settings-status"
                     value={settingsStatus}
                     onChange={e => setSettingsStatus(e.target.value)}
+                    aria-required="true"
                     className="w-full bg-[#030305] border border-[#222240] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#7c6df5]/60 transition-colors appearance-none cursor-pointer"
                   >
                     <option value="draft">Draft</option>
@@ -1105,7 +1112,13 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
 
             <div className="flex items-center justify-between pt-2 border-t border-[#222240]">
               {saveResult ? (
-                <span className="text-sm font-medium" style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}>
+                <span
+                  id={saveResult.ok ? 'settings-save-success' : 'settings-save-error'}
+                  role="status"
+                  aria-live="polite"
+                  className="text-sm font-medium"
+                  style={{ color: saveResult.ok ? '#00e096' : '#ff6b9d' }}
+                >
                   {saveResult.msg}
                 </span>
               ) : <span />}

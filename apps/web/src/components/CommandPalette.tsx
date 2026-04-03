@@ -118,6 +118,9 @@ export default function CommandPalette({ open, onClose }: Props) {
         className="max-w-2xl w-full mx-4 bg-[#0c0c18] border border-[#222240] rounded-2xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
         onKeyDown={handleKeyDown}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
       >
         {/* Search input */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-[#222240]">
@@ -127,19 +130,30 @@ export default function CommandPalette({ open, onClose }: Props) {
           }
           <input
             ref={inputRef}
+            id="cmd-input"
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search campaigns, stores, submissions..."
             className="flex-1 bg-transparent text-white text-base outline-none placeholder:text-[#b0b0d0]/50"
+            role="combobox"
+            aria-expanded={hasQuery && totalResults > 0}
+            aria-autocomplete="list"
+            aria-controls="cmd-listbox"
+            aria-activedescendant={flatItems[activeIndex] ? `cmd-option-${flatItems[activeIndex].id}` : undefined}
           />
           <kbd className="hidden sm:flex items-center gap-1 px-2 py-1 bg-[#222240] rounded text-[10px] text-[#b0b0d0] font-mono">
             Esc
           </kbd>
         </div>
 
+        {/* Screen reader result count announcement */}
+        <div aria-live="polite" className="sr-only">
+          {hasQuery && !loading && `${totalResults} result${totalResults !== 1 ? 's' : ''}`}
+        </div>
+
         {/* Results */}
-        <div className="max-h-[400px] overflow-y-auto">
+        <div id="cmd-listbox" role="listbox" className="max-h-[400px] overflow-y-auto">
           {!hasQuery && (
             <div className="px-5 py-8 text-center text-[#b0b0d0] text-sm">
               Start typing to search...
@@ -159,12 +173,16 @@ export default function CommandPalette({ open, onClose }: Props) {
               </div>
               {results.campaigns.map(c => {
                 const myIdx = itemIdx++
+                const isActive = activeIndex === myIdx
                 return (
                   <button
                     key={c.id}
+                    id={`cmd-option-${c.id}`}
                     onClick={() => navigate(`/campaigns/${c.id}`)}
+                    role="option"
+                    aria-selected={isActive}
                     className={`w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors ${
-                      activeIndex === myIdx ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
+                      isActive ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="w-8 h-8 rounded-lg bg-[#7c6df5]/15 flex items-center justify-center flex-shrink-0">
@@ -191,12 +209,16 @@ export default function CommandPalette({ open, onClose }: Props) {
               {results.stores.map(s => {
                 const myIdx = itemIdx++
                 const subtitle = [s.city, s.address].filter(Boolean).join(' · ')
+                const isActive = activeIndex === myIdx
                 return (
                   <button
                     key={s.id}
+                    id={`cmd-option-${s.id}`}
                     onClick={() => navigate(`/stores/${s.id}`)}
+                    role="option"
+                    aria-selected={isActive}
                     className={`w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors ${
-                      activeIndex === myIdx ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
+                      isActive ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="w-8 h-8 rounded-lg bg-[#00d4d4]/10 flex items-center justify-center flex-shrink-0">
@@ -219,12 +241,16 @@ export default function CommandPalette({ open, onClose }: Props) {
               </div>
               {results.submissions.map(s => {
                 const myIdx = itemIdx++
+                const isActive = activeIndex === myIdx
                 return (
                   <button
                     key={s.id}
+                    id={`cmd-option-${s.id}`}
                     onClick={() => navigate('/gallery')}
+                    role="option"
+                    aria-selected={isActive}
                     className={`w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors ${
-                      activeIndex === myIdx ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
+                      isActive ? 'bg-[#7c6df5]/15' : 'hover:bg-white/[0.03]'
                     }`}
                   >
                     <div className="w-8 h-8 rounded-lg bg-[#ffc947]/10 flex items-center justify-center flex-shrink-0">

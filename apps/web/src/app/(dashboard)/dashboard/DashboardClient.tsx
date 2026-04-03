@@ -16,6 +16,7 @@ import {
 } from 'recharts'
 import { format, parseISO, formatDistanceToNowStrict } from 'date-fns'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
+import { useI18n } from '@/components/I18nProvider'
 
 interface TrendPoint {
   date: string
@@ -63,9 +64,9 @@ const ChartTooltip = memo(function ChartTooltip({ active, payload, label }: any)
   if (!active || !payload?.length) return null
   const d = payload[0]?.payload as TrendPoint
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-xl px-4 py-3 text-xs shadow-xl">
-      <div className="text-[#b0b0d0] mb-1">{label}</div>
-      <div className="text-white font-bold text-sm">{Math.round(d?.avg_score ?? 0)}% avg score</div>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)' }} className="rounded-xl px-4 py-3 text-xs shadow-xl">
+      <div style={{ color: 'var(--text-muted)' }} className="mb-1">{label}</div>
+      <div style={{ color: 'var(--text)' }} className="font-bold text-sm">{Math.round(d?.avg_score ?? 0)}% avg score</div>
       <div className="text-[#7c6df5]">{d?.compliant ?? 0} / {d?.total ?? 0} compliant</div>
     </div>
   )
@@ -120,12 +121,12 @@ function StoreTooltip({
     <foreignObject x={tx} y={ty} width={W_CARD} height={H_CARD} style={{ overflow: 'visible' }}>
       <div
         style={{
-          background: '#0c0c18',
-          border: '1px solid #333360',
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
           borderRadius: 10,
           padding: '8px 10px',
           fontSize: 11,
-          color: '#fff',
+          color: 'var(--text)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.6)',
           width: W_CARD,
           pointerEvents: 'none',
@@ -133,7 +134,7 @@ function StoreTooltip({
       >
         <div style={{ fontWeight: 800, marginBottom: 4, lineHeight: 1.3 }}>{store.store_name}</div>
         <div style={{ color: col, fontWeight: 700, marginBottom: 2 }}>Score: {score}</div>
-        <div style={{ color: '#b0b0d0', marginBottom: 6 }}>Last audit: {auditDate}</div>
+        <div style={{ color: 'var(--text-muted)', marginBottom: 6 }}>Last audit: {auditDate}</div>
         <a
           href={`/stores/${store.store_id}`}
           style={{ color: '#a89cf7', fontWeight: 600, textDecoration: 'none', pointerEvents: 'auto' }}
@@ -205,8 +206,8 @@ const StoreSvgMap = memo(function StoreSvgMap({
       viewBox={`0 0 ${W} ${H}`}
       className="w-full rounded-xl"
       style={{
-        background: '#030305',
-        border: '1px solid #222240',
+        background: 'var(--bg)',
+        border: '1px solid var(--border)',
         transform: `scale(${zoom})`,
         transformOrigin: 'center center',
         transition: 'transform 0.2s ease',
@@ -217,8 +218,8 @@ const StoreSvgMap = memo(function StoreSvgMap({
       {/* Grid */}
       {[0.25, 0.5, 0.75].map(f => (
         <g key={f}>
-          <line x1={PAD} y1={PAD + f * (H - PAD * 2)} x2={W - PAD} y2={PAD + f * (H - PAD * 2)} stroke="#222240" strokeWidth="1" />
-          <line x1={PAD + f * (W - PAD * 2)} y1={PAD} x2={PAD + f * (W - PAD * 2)} y2={H - PAD} stroke="#222240" strokeWidth="1" />
+          <line x1={PAD} y1={PAD + f * (H - PAD * 2)} x2={W - PAD} y2={PAD + f * (H - PAD * 2)} stroke="var(--border)" strokeWidth="1" />
+          <line x1={PAD + f * (W - PAD * 2)} y1={PAD} x2={PAD + f * (W - PAD * 2)} y2={H - PAD} stroke="var(--border)" strokeWidth="1" />
         </g>
       ))}
 
@@ -361,7 +362,8 @@ function MapControls({
       <select
         value={selectedCampaign}
         onChange={e => onCampaignChange(e.target.value)}
-        className="bg-[#030305] border border-[#222240] text-[#b0b0d0] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#7c6df5]"
+        aria-label="Filter map by campaign"
+        className="bg-[var(--bg)] border border-[var(--border)] text-[var(--text-muted)] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#7c6df5]"
       >
         <option value="">All campaigns</option>
         {campaigns.map(c => (
@@ -373,7 +375,8 @@ function MapControls({
       <select
         value={statusFilter}
         onChange={e => onStatusChange(e.target.value)}
-        className="bg-[#030305] border border-[#222240] text-[#b0b0d0] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#7c6df5]"
+        aria-label="Filter map by compliance status"
+        className="bg-[var(--bg)] border border-[var(--border)] text-[var(--text-muted)] text-xs rounded-xl px-3 py-1.5 focus:outline-none focus:border-[#7c6df5]"
       >
         <option value="all">All statuses</option>
         <option value="compliant">Compliant only</option>
@@ -383,7 +386,7 @@ function MapControls({
 
       {/* Score threshold slider */}
       <div className="flex items-center gap-2">
-        <span className="text-[#b0b0d0] text-xs whitespace-nowrap">Below:</span>
+        <span className="text-[var(--text-muted)] text-xs whitespace-nowrap">Below:</span>
         <input
           type="range"
           min={50}
@@ -396,7 +399,7 @@ function MapControls({
       </div>
 
       {/* Display mode toggle: Pins | Heatmap */}
-      <div className="flex items-center gap-1 bg-[#030305] border border-[#222240] rounded-xl p-1">
+      <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-xl p-1">
         <button
           onClick={() => onDisplayModeChange('pins')}
           className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors"
@@ -416,7 +419,7 @@ function MapControls({
       </div>
 
       {/* Compliance | Territory toggle */}
-      <div className="flex items-center gap-1 bg-[#030305] border border-[#222240] rounded-xl p-1">
+      <div className="flex items-center gap-1 bg-[var(--bg)] border border-[var(--border)] rounded-xl p-1">
         <button
           onClick={() => onViewModeChange('compliance')}
           className="px-3 py-1 rounded-lg text-xs font-semibold transition-colors"
@@ -437,13 +440,13 @@ function MapControls({
       <div className="flex items-center gap-1 ml-auto">
         <button
           onClick={onZoomOut}
-          className="w-7 h-7 flex items-center justify-center bg-[#030305] border border-[#222240] rounded-lg text-[#b0b0d0] hover:border-[#7c6df5] hover:text-white transition-colors"
+          className="w-7 h-7 flex items-center justify-center bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text-muted)] hover:border-[#7c6df5] hover:text-[var(--text)] transition-colors"
         >
           <ZoomOut size={12} />
         </button>
         <button
           onClick={onZoomIn}
-          className="w-7 h-7 flex items-center justify-center bg-[#030305] border border-[#222240] rounded-lg text-[#b0b0d0] hover:border-[#7c6df5] hover:text-white transition-colors"
+          className="w-7 h-7 flex items-center justify-center bg-[var(--bg)] border border-[var(--border)] rounded-lg text-[var(--text-muted)] hover:border-[#7c6df5] hover:text-[var(--text)] transition-colors"
         >
           <ZoomIn size={12} />
         </button>
@@ -512,14 +515,14 @@ function MapModal({
       {/* Modal header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-xl font-black text-white">Store Coverage Map</h2>
-          <p className="text-[#b0b0d0] text-sm mt-0.5">
+          <h2 className="text-xl font-black text-[var(--text)]">Store Coverage Map</h2>
+          <p className="text-[var(--text-muted)] text-sm mt-0.5">
             Showing {stores.length} of {totalStores} stores
           </p>
         </div>
         <button
           onClick={onClose}
-          className="w-9 h-9 flex items-center justify-center bg-[#0c0c18] border border-[#222240] rounded-xl text-[#b0b0d0] hover:border-[#ff4d6d] hover:text-[#ff4d6d] transition-colors"
+          className="w-9 h-9 flex items-center justify-center bg-[var(--card)] border border-[var(--border)] rounded-xl text-[var(--text-muted)] hover:border-[#ff4d6d] hover:text-[#ff4d6d] transition-colors"
         >
           <X size={16} />
         </button>
@@ -584,7 +587,7 @@ function MiniScoreRing({ score, compliantPct }: { score: number | null; complian
   return (
     <div className="relative flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90 absolute inset-0">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#222240" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--border)" strokeWidth={stroke} />
         <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke} strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" />
       </svg>
       <div className="relative text-center">
@@ -625,10 +628,10 @@ const CampaignCard = memo(function CampaignCard({ c }: { c: CampaignOverview }) 
     : '#ff4d6d'
 
   return (
-    <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-4 flex flex-col gap-3 hover:border-[#7c6df5]/40 transition-colors max-w-sm w-full">
+    <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-4 flex flex-col gap-3 hover:border-[#7c6df5]/40 transition-colors max-w-sm w-full">
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-white text-sm leading-tight truncate">{c.campaign_name}</div>
+          <div className="font-bold text-[var(--text)] text-sm leading-tight truncate">{c.campaign_name}</div>
           <div className="mt-1"><StatusBadge status={c.status} /></div>
         </div>
         <MiniScoreRing score={c.avg_score} compliantPct={compliantPct} />
@@ -640,32 +643,32 @@ const CampaignCard = memo(function CampaignCard({ c }: { c: CampaignOverview }) 
           { label: 'Scored',     value: c.scored_count },
           { label: 'Open Tasks', value: c.open_tasks },
         ].map(({ label, value }) => (
-          <div key={label} className="bg-[#030305] rounded-xl p-2">
-            <div className="text-white font-black text-base leading-none">{value}</div>
-            <div className="text-[#b0b0d0] text-[9px] mt-0.5 leading-tight">{label}</div>
+          <div key={label} className="bg-[var(--bg)] rounded-xl p-2">
+            <div className="text-[var(--text)] font-black text-base leading-none">{value}</div>
+            <div className="text-[var(--text-muted)] text-[9px] mt-0.5 leading-tight">{label}</div>
           </div>
         ))}
       </div>
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[#b0b0d0] text-xs">Compliant</span>
+          <span className="text-[var(--text-muted)] text-xs">Compliant</span>
           <span className="text-xs font-bold" style={{ color: progressColor }}>
             {compliantPct !== null ? `${Math.round(compliantPct)}%` : '—'}
           </span>
         </div>
-        <div className="h-1.5 rounded-full bg-[#222240] overflow-hidden">
+        <div className="h-1.5 rounded-full bg-[var(--border)] overflow-hidden">
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${compliantPct ?? 0}%`, background: progressColor }} />
         </div>
       </div>
-      <div className="text-[#b0b0d0] text-xs flex items-center gap-1">
+      <div className="text-[var(--text-muted)] text-xs flex items-center gap-1">
         <Clock size={10} className="flex-shrink-0" />
         {relativeTime(c.last_submission_at)}
       </div>
-      <div className="flex items-center gap-2 pt-1 border-t border-[#222240]">
+      <div className="flex items-center gap-2 pt-1 border-t border-[var(--border)]">
         <a href={`/campaigns/${c.campaign_id}`} className="flex-1 flex items-center justify-center gap-1.5 bg-[#7c6df5]/15 border border-[#7c6df5]/30 hover:bg-[#7c6df5]/25 text-[#a89cf7] text-xs font-semibold py-1.5 rounded-xl transition-colors">
           <ExternalLink size={11} /> View
         </a>
-        <a href={`/gallery?campaign=${c.campaign_id}`} className="flex-1 flex items-center justify-center gap-1.5 bg-[#222240] hover:bg-[#2a2a50] text-[#b0b0d0] text-xs font-semibold py-1.5 rounded-xl transition-colors">
+        <a href={`/gallery?campaign=${c.campaign_id}`} className="flex-1 flex items-center justify-center gap-1.5 bg-[var(--border)] hover:bg-[#2a2a50] text-[var(--text-muted)] text-xs font-semibold py-1.5 rounded-xl transition-colors">
           <ImageIcon size={11} /> Gallery
         </a>
       </div>
@@ -675,6 +678,7 @@ const CampaignCard = memo(function CampaignCard({ c }: { c: CampaignOverview }) 
 
 // ─── Main dashboard ───────────────────────────────────────────────────────────
 export default function DashboardClient({ campaigns, submissions, trend, mapData }: Props) {
+  const { t } = useI18n()
   const [mapViewMode, setMapViewMode] = useState<'compliance' | 'territory'>('compliance')
   const [mapDisplayMode, setMapDisplayMode] = useState<'pins' | 'heatmap'>('pins')
   const [zoom, setZoom] = useState(1)
@@ -789,19 +793,19 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Campaign Overview</h1>
-          <p className="text-[#b0b0d0] mt-1">Real-time shelf compliance across all active campaigns</p>
+          <h1 className="text-3xl font-black text-[var(--text)] tracking-tight">Campaign Overview</h1>
+          <p className="text-[var(--text-muted)] mt-1">Real-time shelf compliance across all active campaigns</p>
         </div>
         <div className="flex items-center gap-2 bg-[#00e096]/10 border border-[#00e096]/25 rounded-full px-4 py-2">
           <span className="w-2 h-2 rounded-full bg-[#00e096] animate-pulse" />
-          <span className="text-[#00e096] text-sm font-bold">LIVE</span>
+          <span className="text-[#00e096] text-sm font-bold">{t('dashboard.live')}</span>
         </div>
       </div>
 
       {/* Portfolio Health */}
-      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-5 mb-6">
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-5 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-[#b0b0d0] uppercase tracking-wider">Portfolio Health</h2>
+          <h2 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">{t('dashboard.portfolioHealth')}</h2>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div className="flex items-center gap-3">
@@ -809,7 +813,7 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
               <div className="text-4xl font-black leading-none" style={{ color: portfolioCompliance === null ? '#b0b0d0' : portfolioCompliance >= 80 ? '#00e096' : portfolioCompliance >= 50 ? '#ffc947' : '#ff4d6d' }}>
                 {portfolioCompliance !== null ? `${portfolioCompliance}%` : '—'}
               </div>
-              <div className="text-[#b0b0d0] text-xs mt-1">Overall Compliance</div>
+              <div className="text-[var(--text-muted)] text-xs mt-1">{t('dashboard.overallCompliance')}</div>
             </div>
             <div className="flex items-center gap-1 bg-[#00e096]/10 px-2 py-1 rounded-lg">
               <TrendingUp size={12} className="text-[#00e096]" />
@@ -817,18 +821,18 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
             </div>
           </div>
           <div>
-            <div className="text-4xl font-black text-white leading-none">{activeCampaigns.length}</div>
-            <div className="text-[#b0b0d0] text-xs mt-1">Active Campaigns</div>
+            <div className="text-4xl font-black text-[var(--text)] leading-none">{activeCampaigns.length}</div>
+            <div className="text-[var(--text-muted)] text-xs mt-1">{t("dashboard.activeCampaigns")}</div>
             <div className="flex items-center gap-1 mt-1"><TrendingUp size={11} className="text-[#7c6df5]" /><span className="text-[#7c6df5] text-xs">+1 this week</span></div>
           </div>
           <div>
-            <div className="text-4xl font-black text-white leading-none">{totalStores}</div>
-            <div className="text-[#b0b0d0] text-xs mt-1">Stores Monitored</div>
+            <div className="text-4xl font-black text-[var(--text)] leading-none">{totalStores}</div>
+            <div className="text-[var(--text-muted)] text-xs mt-1">Stores Monitored</div>
             <div className="flex items-center gap-1 mt-1"><TrendingUp size={11} className="text-[#00d4d4]" /><span className="text-[#00d4d4] text-xs">+12 vs last week</span></div>
           </div>
           <div>
-            <div className="text-4xl font-black text-white leading-none">{campaigns.reduce((acc, c) => acc + (c.open_tasks ?? 0), 0)}</div>
-            <div className="text-[#b0b0d0] text-xs mt-1">Open Tasks</div>
+            <div className="text-4xl font-black text-[var(--text)] leading-none">{campaigns.reduce((acc, c) => acc + (c.open_tasks ?? 0), 0)}</div>
+            <div className="text-[var(--text-muted)] text-xs mt-1">Open Tasks</div>
             <div className="flex items-center gap-1 mt-1"><TrendingDown size={11} className="text-[#ffc947]" /><span className="text-[#ffc947] text-xs">-5 vs last week</span></div>
           </div>
         </div>
@@ -837,12 +841,12 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
       {/* Stats grid */}
       <div className="grid grid-cols-4 gap-5 mb-8">
         {stats.map((stat) => (
-          <div key={stat.label} className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6">
+          <div key={stat.label} className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
-              <span className="text-[#b0b0d0] text-sm font-medium">{stat.label}</span>
+              <span className="text-[var(--text-muted)] text-sm font-medium">{stat.label}</span>
               <stat.icon size={18} style={{ color: stat.color }} />
             </div>
-            <div className="text-4xl font-black text-white mb-1">{stat.value}</div>
+            <div className="text-4xl font-black text-[var(--text)] mb-1">{stat.value}</div>
             {stat.delta && <div className="text-xs" style={{ color: stat.color }}>{stat.delta}</div>}
           </div>
         ))}
@@ -851,14 +855,14 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
       {/* Campaign Cards */}
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-white">All Campaigns</h2>
-          <span className="text-[#b0b0d0] text-sm">{campaigns.length} total</span>
+          <h2 className="text-lg font-bold text-[var(--text)]">All Campaigns</h2>
+          <span className="text-[var(--text-muted)] text-sm">{campaigns.length} total</span>
         </div>
         {campaigns.length === 0 ? (
-          <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-12 text-center">
-            <BarChart3 size={40} className="mx-auto mb-3 text-[#b0b0d0] opacity-30" />
-            <p className="text-[#b0b0d0]">No campaigns yet.</p>
-            <a href="/campaigns/new" className="mt-4 inline-block bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white text-sm font-bold px-5 py-2 rounded-xl">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-12 text-center">
+            <BarChart3 size={40} className="mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
+            <p className="text-[var(--text-muted)]">No campaigns yet.</p>
+            <a href="/campaigns/new" className="mt-4 inline-block bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-[var(--text)] text-sm font-bold px-5 py-2 rounded-xl">
               Create your first campaign
             </a>
           </div>
@@ -874,36 +878,56 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
       </div>
 
       {/* Compliance Trend Chart */}
-      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 mb-5">
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 mb-5">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-lg font-bold text-white">Compliance Trend</h2>
-            <p className="text-[#b0b0d0] text-sm mt-0.5">Last 30 days — % of audits passing compliance</p>
+            <h2 className="text-lg font-bold text-[var(--text)]">Compliance Trend</h2>
+            <p className="text-[var(--text-muted)] text-sm mt-0.5">Last 30 days — % of audits passing compliance</p>
           </div>
-          <TrendingUp size={18} className="text-[#7c6df5]" />
+          <TrendingUp size={18} className="text-[#7c6df5]" aria-hidden="true" />
         </div>
         {chartData.length === 0 ? (
-          <div className="h-48 flex items-center justify-center text-[#b0b0d0] text-sm">No trend data available yet</div>
+          <div className="h-48 flex items-center justify-center text-[var(--text-muted)] text-sm">No trend data available yet</div>
         ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-              <CartesianGrid stroke="#222240" strokeDasharray="4 4" vertical={false} />
-              <XAxis dataKey="dateLabel" tick={{ fill: '#b0b0d0', fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
-              <YAxis domain={[0, 100]} tick={{ fill: '#b0b0d0', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={38} />
-              <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#7c6df5', strokeWidth: 1, strokeDasharray: '4 4' }} />
-              <Line type="monotone" dataKey="compliancePct" stroke="#7c6df5" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }} />
-            </LineChart>
-          </ResponsiveContainer>
+          <div aria-label="Compliance trend line chart">
+            <div className="sr-only" aria-label="Chart data table">
+              <table>
+                <caption>Compliance trend — last 30 days</caption>
+                <thead>
+                  <tr><th scope="col">Date</th><th scope="col">Compliance %</th><th scope="col">Total Audits</th><th scope="col">Compliant</th></tr>
+                </thead>
+                <tbody>
+                  {chartData.map(d => (
+                    <tr key={d.date}>
+                      <td>{d.dateLabel}</td>
+                      <td>{d.compliancePct}%</td>
+                      <td>{d.total}</td>
+                      <td>{d.compliant}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <CartesianGrid stroke="var(--border)" strokeDasharray="4 4" vertical={false} />
+                <XAxis dataKey="dateLabel" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis domain={[0, 100]} tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} width={38} />
+                <Tooltip content={<ChartTooltip />} cursor={{ stroke: '#7c6df5', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                <Line type="monotone" dataKey="compliancePct" stroke="#7c6df5" strokeWidth={2.5} dot={false} activeDot={{ r: 5, fill: '#7c6df5', stroke: '#0c0c18', strokeWidth: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
       {/* Store Coverage Map */}
-      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6 mb-5">
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 mb-5">
         {/* Map header */}
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-bold text-white">Store Coverage</h2>
-            <p className="text-[#b0b0d0] text-sm mt-0.5">Geographic distribution of audited stores</p>
+            <h2 className="text-lg font-bold text-[var(--text)]">Store Coverage</h2>
+            <p className="text-[var(--text-muted)] text-sm mt-0.5">Geographic distribution of audited stores</p>
           </div>
           <div className="flex items-center gap-3">
             {/* Store count badge */}
@@ -913,7 +937,7 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
             {/* Expand button */}
             <button
               onClick={() => setModalOpen(true)}
-              className="w-8 h-8 flex items-center justify-center bg-[#030305] border border-[#222240] rounded-xl text-[#b0b0d0] hover:border-[#7c6df5] hover:text-white transition-colors"
+              className="w-8 h-8 flex items-center justify-center bg-[var(--bg)] border border-[var(--border)] rounded-xl text-[var(--text-muted)] hover:border-[#7c6df5] hover:text-[var(--text)] transition-colors"
               title="Expand map"
             >
               <Maximize2 size={14} />
@@ -951,12 +975,12 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
       </div>
 
       {/* Recent Submissions */}
-      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl p-6">
+      <div className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6">
         <div className="flex items-center gap-2 mb-5 flex-wrap">
-          <h2 className="text-lg font-bold text-white">Recent Submissions</h2>
+          <h2 className="text-lg font-bold text-[var(--text)]">{t('dashboard.recentSubmissions')}</h2>
           <div className="flex items-center gap-1.5 bg-[#00e096]/10 border border-[#00e096]/25 rounded-full px-2.5 py-1">
             <LiveDot connected={isConnected} />
-            <span className="text-[#00e096] text-xs font-bold">LIVE</span>
+            <span className="text-[#00e096] text-xs font-bold">{t('dashboard.live')}</span>
           </div>
           {showNewBadge && (
             <span style={{ animation: 'mosaic-fadein 0.25s ease', background: '#7c6df520', border: '1px solid #7c6df550', borderRadius: 999, padding: '2px 10px', color: '#a89cf7', fontSize: 12, fontWeight: 700 }}>
@@ -968,11 +992,11 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
           {mergedSubmissions.slice(0, 8).map((s: any) => {
             const result = s.compliance_results?.[0]
             return (
-              <div key={s.id} className="flex items-center gap-3 p-3 bg-[#030305] rounded-xl border border-[#222240]">
+              <div key={s.id} className="flex items-center gap-3 p-3 bg-[var(--bg)] rounded-xl border border-[var(--border)]">
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${result?.is_compliant ? 'bg-[#00e096]' : result ? 'bg-[#ff6b9d]' : 'bg-[#ffc947]'}`} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-white truncate">{s.stores?.name ?? 'Unknown store'}</div>
-                  <div className="text-xs text-[#b0b0d0]">{s.stores?.city}</div>
+                  <div className="text-sm font-medium text-[var(--text)] truncate">{s.stores?.name ?? 'Unknown store'}</div>
+                  <div className="text-xs text-[var(--text-muted)]">{s.stores?.city}</div>
                 </div>
                 {result && (
                   <div className="text-sm font-bold" style={{ color: result.is_compliant ? '#00e096' : '#ff6b9d' }}>
@@ -983,7 +1007,7 @@ export default function DashboardClient({ campaigns, submissions, trend, mapData
             )
           })}
           {mergedSubmissions.length === 0 && (
-            <p className="text-[#b0b0d0] text-sm text-center py-8">No submissions yet</p>
+            <p className="text-[var(--text-muted)] text-sm text-center py-8">{t('dashboard.noSubmissions')}</p>
           )}
         </div>
       </div>
