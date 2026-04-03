@@ -1,11 +1,12 @@
 'use client'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
-import { ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, MapPin, Building2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, CheckCircle, XCircle, Clock, MapPin, Building2, GitCompareArrows, Share2 } from 'lucide-react'
 import { formatDistanceToNow, format } from 'date-fns'
+import PhotoComparison from '@/components/PhotoComparison'
 
 interface Store {
   id: string
@@ -217,6 +218,212 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
+// ─── Compare Audits Section ────────────────────────────────────────────────────
+
+function getFindings(entry: AuditEntry): string[] {
+  if (Array.isArray(entry.findings)) return entry.findings as string[]
+  if (typeof entry.findings === 'object' && entry.findings !== null)
+    return Object.values(entry.findings as Record<string, string>)
+  return []
+}
+
+function FindingsDiff({
+  baseFindings,
+  latestFindings,
+}: {
+  baseFindings: string[]
+  latestFindings: string[]
+}) {
+  const resolved = baseFindings.filter(f => !latestFindings.includes(f))
+  const appeared = latestFindings.filter(f => !baseFindings.includes(f))
+
+  if (resolved.length === 0 && appeared.length === 0) {
+    return (
+      <p className="text-xs text-[#b0b0d0] italic">No change in findings between these two audits.</p>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {resolved.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-[#00e096] uppercase tracking-wider mb-1.5">
+            Resolved ({resolved.length})
+          </div>
+          <ul className="space-y-1">
+            {resolved.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-[#b0b0d0]">
+                <span className="mt-1 text-[#00e096] font-bold flex-shrink-0">✓</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {appeared.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold text-[#ff6b9d] uppercase tracking-wider mb-1.5">
+            New Issues ({appeared.length})
+          </div>
+          <ul className="space-y-1">
+            {appeared.map((f, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs text-[#b0b0d0]">
+                <span className="mt-1 text-[#ff6b9d] font-bold flex-shrink-0">!</span>
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CompareAuditsSection({ auditHistory }: { auditHistory: AuditEntry[] }) {
+  const scoredAudits = useMemo(
+    () => auditHistory.filter(e => e.photo_url),
+    [auditHistory],
+  )
+
+  const [baselineId, setBaselineId] = useState<string>('')
+  const [latestId, setLatestId] = useState<string>('')
+
+  const baseline = scoredAudits.find(e => e.submission_id === baselineId) ?? null
+  const latest = scoredAudits.find(e => e.submission_id === latestId) ?? null
+
+  const scoreDelta =
+    baseline?.score != null && latest?.score != null
+      ? Math.round(latest.score - baseline.score)
+      : null
+
+  const shareUrl =
+    baseline && latest
+      ? `${typeof window !== 'undefined' ? window.location.origin : ''}/compare?a=${baseline.submission_id}&b=${latest.submission_id}`
+      : null
+
+  function copyShareUrl() {
+    if (shareUrl) navigator.clipboard.writeText(shareUrl)
+  }
+
+  if (scoredAudits.length < 2) return null
+
+  return (
+    <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl overflow-hidden mt-6">
+      <div className="px-6 py-4 border-b border-[#222240] flex items-center gap-3">
+        <GitCompareArrows size={16} className="text-[#7c6df5]" />
+        <h2 className="font-bold text-white">Compare Audits</h2>
+        <span className="text-xs text-[#b0b0d0] ml-auto">Select two audits to compare compliance photos</span>
+      </div>
+
+      <div className="p-6 space-y-6">
+        {/* Dropdowns */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Baseline Audit</label>
+            <div className="relative">
+              <select
+                value={baselineId}
+                onChange={e => setBaselineId(e.target.value)}
+                className="w-full appearance-none bg-[#030305] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+              >
+                <option value="">Select baseline…</option>
+                {scoredAudits.map(e => (
+                  <option key={e.submission_id} value={e.submission_id}>
+                    {e.submitted_at ? format(new Date(e.submitted_at), 'd MMM yyyy') : e.submission_id.slice(0, 8)}
+                    {e.score != null ? ` · ${Math.round(e.score)}pts` : ''}
+                    {' · '}{e.campaign_name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Latest Audit</label>
+            <div className="relative">
+              <select
+                value={latestId}
+                onChange={e => setLatestId(e.target.value)}
+                className="w-full appearance-none bg-[#030305] border border-[#222240] rounded-xl pl-4 pr-9 py-2.5 text-sm text-white outline-none focus:border-[#7c6df5] transition-colors cursor-pointer"
+              >
+                <option value="">Select latest…</option>
+                {scoredAudits.map(e => (
+                  <option key={e.submission_id} value={e.submission_id}>
+                    {e.submitted_at ? format(new Date(e.submitted_at), 'd MMM yyyy') : e.submission_id.slice(0, 8)}
+                    {e.score != null ? ` · ${Math.round(e.score)}pts` : ''}
+                    {' · '}{e.campaign_name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+            </div>
+          </div>
+        </div>
+
+        {/* Score delta badge */}
+        {scoreDelta !== null && (
+          <div className="flex items-center gap-3">
+            <span
+              className="text-2xl font-black px-4 py-2 rounded-xl"
+              style={
+                scoreDelta > 0
+                  ? { background: '#00e09620', color: '#00e096' }
+                  : scoreDelta < 0
+                  ? { background: '#ff6b9d20', color: '#ff6b9d' }
+                  : { background: '#22224040', color: '#b0b0d0' }
+              }
+            >
+              {scoreDelta > 0 ? '+' : ''}{scoreDelta} points
+            </span>
+            <span className="text-sm text-[#b0b0d0]">
+              {scoreDelta > 0 ? 'Compliance improved' : scoreDelta < 0 ? 'Compliance declined' : 'No change'}
+            </span>
+
+            {shareUrl && (
+              <button
+                onClick={copyShareUrl}
+                className="ml-auto flex items-center gap-1.5 text-xs text-[#7c6df5] hover:text-[#a89cf7] transition-colors font-medium px-3 py-1.5 rounded-lg border border-[#7c6df5]/30 hover:border-[#7c6df5]/60"
+              >
+                <Share2 size={12} />
+                Share comparison
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Photo comparison */}
+        {baseline?.photo_url && latest?.photo_url && (
+          <>
+            <PhotoComparison
+              beforeUrl={baseline.photo_url}
+              afterUrl={latest.photo_url}
+              beforeLabel={baseline.submitted_at ? format(new Date(baseline.submitted_at), 'd MMM yy') : 'BEFORE'}
+              afterLabel={latest.submitted_at ? format(new Date(latest.submitted_at), 'd MMM yy') : 'AFTER'}
+              beforeScore={baseline.score}
+              afterScore={latest.score}
+            />
+
+            {/* Findings diff */}
+            <div className="bg-[#030305] border border-[#222240] rounded-xl p-4">
+              <div className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider mb-3">Findings Changes</div>
+              <FindingsDiff
+                baseFindings={getFindings(baseline)}
+                latestFindings={getFindings(latest)}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Prompt when not both selected */}
+        {(!baseline?.photo_url || !latest?.photo_url) && baselineId && latestId && (
+          <p className="text-xs text-[#b0b0d0] italic">One or both selected audits have no photo.</p>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function StoreDetailClient({ store, auditHistory, health }: Props) {
   const router = useRouter()
 
@@ -372,6 +579,9 @@ export default function StoreDetailClient({ store, auditHistory, health }: Props
           </div>
         )}
       </div>
+
+      {/* Compare Audits */}
+      <CompareAuditsSection auditHistory={auditHistory} />
     </div>
   )
 }

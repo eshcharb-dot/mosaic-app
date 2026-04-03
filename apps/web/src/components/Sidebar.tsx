@@ -1,6 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound, CreditCard } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -198,6 +198,19 @@ export default function Sidebar({ user }: { user: any }) {
         >
           <KeyRound size={13} />
           API Keys
+        </a>
+        {/* Billing sub-item */}
+        <a
+          href="/settings/billing"
+          className="flex items-center gap-2.5 pl-10 pr-4 py-2 rounded-xl text-xs font-medium transition-colors mt-0.5"
+          style={
+            pathname === '/settings/billing' || pathname.startsWith('/settings/billing/')
+              ? activeSubStyle
+              : undefined
+          }
+        >
+          <CreditCard size={13} />
+          Billing
         </a>
       </div>
 

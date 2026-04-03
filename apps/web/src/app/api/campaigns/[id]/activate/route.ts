@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+const PLAN_SUBMISSION_LIMITS: Record<string, number> = {
+  starter: 50,
+  growth: 500,
+  enterprise: 999999,
+}
+
 interface RouteContext {
   params: Promise<{ id: string }>
 }
@@ -42,7 +48,36 @@ export async function POST(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  // 4. Call the DB function
+  // 4. Plan limit check — submissions this month
+  const now = new Date()
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
+
+  const { data: subscription } = await supabase
+    .from('subscriptions')
+    .select('plan')
+    .eq('org_id', profile.organization_id)
+    .maybeSingle()
+
+  const plan = subscription?.plan ?? 'starter'
+  const submissionLimit = PLAN_SUBMISSION_LIMITS[plan] ?? 50
+
+  const { data: usageRows } = await supabase
+    .from('usage_events')
+    .select('count')
+    .eq('org_id', profile.organization_id)
+    .eq('event_type', 'submission')
+    .gte('recorded_at', periodStart)
+
+  const monthlySubmissions = (usageRows ?? []).reduce((sum, r) => sum + (r.count ?? 1), 0)
+
+  if (monthlySubmissions >= submissionLimit) {
+    return NextResponse.json(
+      { error: 'Submission limit reached. Upgrade to Growth.' },
+      { status: 402 }
+    )
+  }
+
+  // 5. Call the DB function
   const { data: tasksCreated, error: rpcError } = await supabase
     .rpc('activate_campaign', { p_campaign_id: campaignId })
 

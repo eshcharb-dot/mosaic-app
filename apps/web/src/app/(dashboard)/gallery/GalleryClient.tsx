@@ -2,7 +2,8 @@
 import { useState, useMemo, useRef, memo } from 'react'
 import Image from 'next/image'
 import { formatDistanceToNow } from 'date-fns'
-import { X, RefreshCw, CheckCircle, XCircle, Clock, Search, ChevronDown, SlidersHorizontal } from 'lucide-react'
+import { X, RefreshCw, CheckCircle, XCircle, Clock, Search, ChevronDown, SlidersHorizontal, GitCompareArrows, Share2 } from 'lucide-react'
+import PhotoComparison from '@/components/PhotoComparison'
 
 export interface Submission {
   id: string
@@ -273,23 +274,47 @@ function SubmissionModal({
 const SubmissionCard = memo(function SubmissionCard({
   sub,
   onClick,
+  compareMode,
+  compareSlot,
+  onCompareSelect,
 }: {
   sub: Submission
   onClick: () => void
+  compareMode?: boolean
+  compareSlot?: 'A' | 'B' | null
+  onCompareSelect?: (sub: Submission) => void
 }) {
   const findings: string[] = Array.isArray(sub.findings) ? sub.findings : []
-  const borderColor = sub.score === null
+  const baseBorderColor = sub.score === null
     ? '#222240'
     : sub.is_compliant
     ? 'rgba(0,224,150,0.3)'
     : 'rgba(255,77,109,0.3)'
+  const borderColor = compareSlot === 'A' ? '#a855f7' : compareSlot === 'B' ? '#06b6d4' : baseBorderColor
+
+  function handleClick() {
+    if (compareMode && onCompareSelect) {
+      onCompareSelect(sub)
+    } else {
+      onClick()
+    }
+  }
 
   return (
     <div
-      onClick={onClick}
-      className="group bg-[#0c0c18] rounded-2xl overflow-hidden cursor-pointer transition-transform hover:-translate-y-0.5"
-      style={{ border: `1px solid ${borderColor}` }}
+      onClick={handleClick}
+      className="group bg-[#0c0c18] rounded-2xl overflow-hidden cursor-pointer transition-transform hover:-translate-y-0.5 relative"
+      style={{ border: `2px solid ${borderColor}` }}
     >
+      {/* Compare slot badge */}
+      {compareSlot && (
+        <div
+          className="absolute top-2 left-2 z-10 text-xs font-black px-2 py-0.5 rounded-full"
+          style={compareSlot === 'A' ? { background: '#a855f730', color: '#a855f7', border: '1px solid #a855f760' } : { background: '#06b6d430', color: '#06b6d4', border: '1px solid #06b6d460' }}
+        >
+          {compareSlot === 'A' ? 'Photo A' : 'Photo B'}
+        </div>
+      )}
       {/* Photo */}
       <div className="relative aspect-square overflow-hidden bg-[#030305]">
         {sub.photo_url ? (
@@ -360,6 +385,64 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest')
   const [collectorFilter, setCollectorFilter] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
+  // Compare mode
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareA, setCompareA] = useState<Submission | null>(null)
+  const [compareB, setCompareB] = useState<Submission | null>(null)
+  const [shareCopied, setShareCopied] = useState(false)
+
+  function handleCompareSelect(sub: Submission) {
+    if (compareA?.id === sub.id) {
+      setCompareA(null)
+      return
+    }
+    if (compareB?.id === sub.id) {
+      setCompareB(null)
+      return
+    }
+    if (!compareA) {
+      setCompareA(sub)
+    } else if (!compareB) {
+      setCompareB(sub)
+    } else {
+      // Replace B, keep A
+      setCompareB(sub)
+    }
+  }
+
+  function clearCompare() {
+    setCompareA(null)
+    setCompareB(null)
+  }
+
+  function exitCompareMode() {
+    setCompareMode(false)
+    clearCompare()
+  }
+
+  function shareCompare() {
+    if (!compareA || !compareB) return
+    const url = `${window.location.origin}/compare?a=${compareA.id}&b=${compareB.id}`
+    navigator.clipboard.writeText(url)
+    setShareCopied(true)
+    setTimeout(() => setShareCopied(false), 2000)
+  }
+
+  function getCompareSlot(sub: Submission): 'A' | 'B' | null {
+    if (compareA?.id === sub.id) return 'A'
+    if (compareB?.id === sub.id) return 'B'
+    return null
+  }
+
+  const findingsDiff = useMemo(() => {
+    if (!compareA || !compareB) return null
+    const aF: string[] = Array.isArray(compareA.findings) ? compareA.findings : []
+    const bF: string[] = Array.isArray(compareB.findings) ? compareB.findings : []
+    return {
+      resolved: aF.filter(f => !bF.includes(f)),
+      appeared: bF.filter(f => !aF.includes(f)),
+    }
+  }, [compareA, compareB])
 
   const isDefaultFilters =
     campaignFilter === 'all' &&
@@ -458,10 +541,35 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
             {submissions.length} submission{submissions.length !== 1 ? 's' : ''} · AI compliance scores
           </p>
         </div>
-        <div className="flex items-center gap-2 bg-[#7c6df5]/10 border border-[#7c6df5]/25 rounded-full px-4 py-2">
-          <span className="text-[#7c6df5] text-sm font-bold">{filtered.length} shown</span>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => compareMode ? exitCompareMode() : setCompareMode(true)}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors border ${
+              compareMode
+                ? 'bg-[#a855f7]/15 border-[#a855f7]/40 text-[#a855f7]'
+                : 'bg-[#0c0c18] border-[#222240] text-[#b0b0d0] hover:text-white hover:border-[#7c6df5]/50'
+            }`}
+          >
+            <GitCompareArrows size={15} />
+            {compareMode ? 'Exit Compare' : 'Compare'}
+          </button>
+          <div className="flex items-center gap-2 bg-[#7c6df5]/10 border border-[#7c6df5]/25 rounded-full px-4 py-2">
+            <span className="text-[#7c6df5] text-sm font-bold">{filtered.length} shown</span>
+          </div>
         </div>
       </div>
+
+      {/* Compare mode hint */}
+      {compareMode && !compareA && (
+        <div className="mb-6 bg-[#a855f7]/10 border border-[#a855f7]/25 rounded-xl px-5 py-3 text-sm text-[#a855f7] font-medium">
+          Click any photo to select it as <strong>Photo A</strong>
+        </div>
+      )}
+      {compareMode && compareA && !compareB && (
+        <div className="mb-6 bg-[#06b6d4]/10 border border-[#06b6d4]/25 rounded-xl px-5 py-3 text-sm text-[#06b6d4] font-medium">
+          Now click a second photo to select it as <strong>Photo B</strong>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="mb-8 space-y-3">
@@ -651,17 +759,126 @@ export default function GalleryClient({ submissions, initialCampaignFilter = 'al
               key={sub.id}
               sub={sub}
               onClick={() => setSelectedSub(sub)}
+              compareMode={compareMode}
+              compareSlot={getCompareSlot(sub)}
+              onCompareSelect={handleCompareSelect}
             />
           ))}
         </div>
       )}
 
       {/* Modal */}
-      {selectedSub && (
+      {selectedSub && !compareMode && (
         <SubmissionModal
           sub={selectedSub}
           onClose={() => setSelectedSub(null)}
         />
+      )}
+
+      {/* Compare panel — slides in from bottom */}
+      {compareMode && compareA && compareB && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-[#080810] border-t border-[#222240] shadow-2xl animate-in slide-in-from-bottom duration-300">
+          <div className="max-w-6xl mx-auto p-6 space-y-5">
+            {/* Panel header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <GitCompareArrows size={18} className="text-[#7c6df5]" />
+                <span className="text-white font-bold">Photo Comparison</span>
+                {compareA.score != null && compareB.score != null && (
+                  <span
+                    className="text-sm font-black px-3 py-1 rounded-lg"
+                    style={
+                      compareB.score - compareA.score > 0
+                        ? { background: '#00e09620', color: '#00e096' }
+                        : compareB.score - compareA.score < 0
+                        ? { background: '#ff6b9d20', color: '#ff6b9d' }
+                        : { background: '#22224050', color: '#b0b0d0' }
+                    }
+                  >
+                    {compareB.score - compareA.score > 0 ? '+' : ''}{Math.round(compareB.score - compareA.score)} pts
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={shareCompare}
+                  className="flex items-center gap-1.5 text-xs text-[#7c6df5] hover:text-[#a89cf7] transition-colors font-medium px-3 py-1.5 rounded-lg border border-[#7c6df5]/30 hover:border-[#7c6df5]/60"
+                >
+                  <Share2 size={12} />
+                  {shareCopied ? 'Copied!' : 'Share comparison'}
+                </button>
+                <button
+                  onClick={clearCompare}
+                  className="text-xs text-[#b0b0d0] hover:text-white transition-colors font-medium px-3 py-1.5 rounded-lg border border-[#222240]"
+                >
+                  Clear comparison
+                </button>
+                <button
+                  onClick={exitCompareMode}
+                  className="text-[#b0b0d0] hover:text-white transition-colors p-1.5 rounded-lg border border-[#222240]"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Score side-by-side */}
+            <div className="grid grid-cols-2 gap-3 text-center text-sm">
+              <div className="bg-[#0c0c18] border border-[#a855f7]/30 rounded-xl p-3">
+                <div className="text-[10px] text-[#a855f7] font-bold uppercase tracking-widest mb-1">Photo A</div>
+                <div className="font-bold text-white truncate">{compareA.store_name ?? 'Unknown'}</div>
+                <div className="text-[#b0b0d0] text-xs">{compareA.campaign_name ?? '—'}</div>
+                {compareA.score != null && (
+                  <div className="text-2xl font-black mt-1" style={{ color: compareA.is_compliant ? '#00e096' : '#ff6b9d' }}>
+                    {Math.round(compareA.score)}
+                  </div>
+                )}
+              </div>
+              <div className="bg-[#0c0c18] border border-[#06b6d4]/30 rounded-xl p-3">
+                <div className="text-[10px] text-[#06b6d4] font-bold uppercase tracking-widest mb-1">Photo B</div>
+                <div className="font-bold text-white truncate">{compareB.store_name ?? 'Unknown'}</div>
+                <div className="text-[#b0b0d0] text-xs">{compareB.campaign_name ?? '—'}</div>
+                {compareB.score != null && (
+                  <div className="text-2xl font-black mt-1" style={{ color: compareB.is_compliant ? '#00e096' : '#ff6b9d' }}>
+                    {Math.round(compareB.score)}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Comparison slider */}
+            {compareA.photo_url && compareB.photo_url && (
+              <PhotoComparison
+                beforeUrl={compareA.photo_url}
+                afterUrl={compareB.photo_url}
+                beforeLabel={`${compareA.store_name ?? 'A'}`}
+                afterLabel={`${compareB.store_name ?? 'B'}`}
+                beforeScore={compareA.score}
+                afterScore={compareB.score}
+              />
+            )}
+
+            {/* Findings diff */}
+            {findingsDiff && (findingsDiff.resolved.length > 0 || findingsDiff.appeared.length > 0) && (
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="bg-[#030505] border border-[#00e09625] rounded-xl p-3">
+                  <div className="text-[#00e096] font-semibold uppercase tracking-wider mb-2">Only in A ({findingsDiff.resolved.length})</div>
+                  {findingsDiff.resolved.length === 0
+                    ? <p className="text-[#b0b0d0] italic">None</p>
+                    : <ul className="space-y-1">{findingsDiff.resolved.map((f, i) => <li key={i} className="text-[#b0b0d0] flex gap-1.5"><span className="text-[#00e096]">✓</span>{f}</li>)}</ul>
+                  }
+                </div>
+                <div className="bg-[#030505] border border-[#ff6b9d25] rounded-xl p-3">
+                  <div className="text-[#ff6b9d] font-semibold uppercase tracking-wider mb-2">Only in B ({findingsDiff.appeared.length})</div>
+                  {findingsDiff.appeared.length === 0
+                    ? <p className="text-[#b0b0d0] italic">None</p>
+                    : <ul className="space-y-1">{findingsDiff.appeared.map((f, i) => <li key={i} className="text-[#b0b0d0] flex gap-1.5"><span className="text-[#ff6b9d]">!</span>{f}</li>)}</ul>
+                  }
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

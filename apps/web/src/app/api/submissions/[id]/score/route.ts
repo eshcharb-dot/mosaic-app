@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { trackUsage } from "@/lib/usage";
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 const SUPABASE_EDGE_URL =
   "https://bmoiftqtxprfgdnizmjn.supabase.co/functions/v1/score-submission";
@@ -40,6 +42,24 @@ export async function POST(
   }
 
   const data = await edgeRes.json();
+
+  // Track usage fire-and-forget after successful score
+  if (edgeRes.ok) {
+    const serviceClient = createServiceClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceRoleKey
+    );
+    serviceClient
+      .from("submissions")
+      .select("organization_id")
+      .eq("id", submission_id)
+      .single()
+      .then(({ data: sub }) => {
+        if (sub?.organization_id) {
+          trackUsage(sub.organization_id, "ai_score");
+        }
+      });
+  }
 
   return NextResponse.json(data, { status: edgeRes.status });
 }

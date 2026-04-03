@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { trackUsage } from '@/lib/usage'
 
 interface StoreInput {
   name: string
@@ -124,6 +125,8 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 500 }
     )
   }
+
+  trackUsage(organizationId, 'store_added', insertedStores.length)
 
   return NextResponse.json({ inserted: insertedStores.length })
 }

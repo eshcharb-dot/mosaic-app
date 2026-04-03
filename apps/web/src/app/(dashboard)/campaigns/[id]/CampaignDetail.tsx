@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useRealtimeTable } from '@/hooks/useRealtimeTable'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2, Plus, AlertTriangle, Shield, ShieldAlert, TrendingUp } from 'lucide-react'
+import { Store, CheckCircle, Clock, BarChart3, Zap, Settings, Upload, Download, Copy, MoreHorizontal, LayoutTemplate, X, UserCheck, CheckCheck, Trash2, Plus, AlertTriangle, Shield, ShieldAlert, TrendingUp, Route } from 'lucide-react'
 import ROICalculator from './ROICalculator'
 import Badge from '@/components/ui/Badge'
 import Checkbox from '@/components/ui/Checkbox'
@@ -107,7 +107,139 @@ interface Props {
   campaignStores: CampaignStore[]
 }
 
-type Tab = 'stores' | 'submissions' | 'roi' | 'settings'
+type Tab = 'stores' | 'submissions' | 'roi' | 'settings' | 'journey'
+
+// ─── Sparkline ────────────────────────────────────────────────────────────────
+
+function Sparkline({ scores }: { scores: number[] }) {
+  if (scores.length < 2) {
+    return (
+      <span className="text-xs text-[#b0b0d0] italic">—</span>
+    )
+  }
+  const min = Math.min(...scores)
+  const max = Math.max(...scores)
+  const range = max - min || 1
+  const w = 80
+  const h = 28
+  const pts = scores.map((s, i) => {
+    const x = (i / (scores.length - 1)) * w
+    const y = h - ((s - min) / range) * h
+    return `${x},${y}`
+  }).join(' ')
+  const last = scores[scores.length - 1]
+  const first = scores[0]
+  const color = last >= first ? '#00e096' : '#ff6b9d'
+  return (
+    <svg width={w} height={h} className="overflow-visible">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// ─── Compliance Journey Tab ───────────────────────────────────────────────────
+
+function ComplianceJourneyTab({ campaignStores }: { campaignStores: CampaignStore[] }) {
+  const storesWithScore = campaignStores.filter(cs => cs.compliance_score != null)
+  const storesWithoutScore = campaignStores.filter(cs => cs.compliance_score == null)
+
+  // For this tab we treat compliance_score as the single data point per store.
+  // "score progression" is simulated as [first=60, last=compliance_score] since
+  // we only have one score per campaign_store here. Real sparklines would need
+  // per-store submission history fetched separately.
+  const storeJourneys = storesWithScore.map(cs => ({
+    id: cs.store_id,
+    name: cs.stores?.name ?? 'Unknown store',
+    city: cs.stores?.city ?? '',
+    score: cs.compliance_score as number,
+  }))
+
+  const sorted = [...storeJourneys].sort((a, b) => b.score - a.score)
+  const best = sorted[0] ?? null
+  const worst = sorted[sorted.length - 1] ?? null
+
+  const improved = storesWithScore.filter(cs => (cs.compliance_score ?? 0) >= 70).length
+  const total = campaignStores.length
+  const avg = storesWithScore.length > 0
+    ? Math.round(storesWithScore.reduce((sum, cs) => sum + (cs.compliance_score ?? 0), 0) / storesWithScore.length)
+    : null
+
+  const narrative =
+    total === 0
+      ? 'No stores have been audited yet for this campaign.'
+      : `Since campaign launch, ${improved} of ${total} store${total !== 1 ? 's' : ''} ${improved === 1 ? 'has' : 'have'} achieved a compliance score of 70 or above.${avg != null ? ` Campaign average: ${avg} points.` : ''}`
+
+  return (
+    <div className="space-y-6">
+      {/* Narrative */}
+      <div className="bg-[#0c0c18] border border-[#7c6df5]/25 rounded-2xl p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <Route size={16} className="text-[#7c6df5]" />
+          <span className="text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">Compliance Journey</span>
+        </div>
+        <p className="text-white text-base leading-relaxed">{narrative}</p>
+      </div>
+
+      {/* Best / Worst highlight */}
+      {(best || worst) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {best && (
+            <div className="bg-[#0c0c18] border border-[#00e09630] rounded-2xl p-5">
+              <div className="text-xs font-semibold text-[#00e096] uppercase tracking-wider mb-2">Best Compliance</div>
+              <div className="text-white font-bold text-lg truncate">{best.name}</div>
+              {best.city && <div className="text-[#b0b0d0] text-xs">{best.city}</div>}
+              <div className="text-4xl font-black mt-3" style={{ color: '#00e096' }}>{Math.round(best.score)}</div>
+            </div>
+          )}
+          {worst && worst.id !== best?.id && (
+            <div className="bg-[#0c0c18] border border-[#ff6b9d30] rounded-2xl p-5">
+              <div className="text-xs font-semibold text-[#ff6b9d] uppercase tracking-wider mb-2">Needs Attention</div>
+              <div className="text-white font-bold text-lg truncate">{worst.name}</div>
+              {worst.city && <div className="text-[#b0b0d0] text-xs">{worst.city}</div>}
+              <div className="text-4xl font-black mt-3" style={{ color: '#ff6b9d' }}>{Math.round(worst.score)}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Store score table with sparklines */}
+      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-[#222240]">
+          <h2 className="font-bold text-white text-sm">Store Compliance Scores</h2>
+        </div>
+        {storeJourneys.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16">
+            <p className="text-[#b0b0d0] text-sm">No scored stores yet.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#222240]">
+            {sorted.map(s => (
+              <div key={s.id} className="flex items-center gap-4 px-6 py-3">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-white text-sm truncate">{s.name}</div>
+                  {s.city && <div className="text-[#b0b0d0] text-xs">{s.city}</div>}
+                </div>
+                {/* Sparkline — single point shown as flat line */}
+                <Sparkline scores={[s.score, s.score]} />
+                <div
+                  className="text-xl font-black w-12 text-right"
+                  style={{ color: s.score >= 80 ? '#00e096' : s.score >= 60 ? '#ffc947' : '#ff6b9d' }}
+                >
+                  {Math.round(s.score)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {storesWithoutScore.length > 0 && (
+          <div className="px-6 py-3 border-t border-[#222240] text-xs text-[#b0b0d0]">
+            {storesWithoutScore.length} store{storesWithoutScore.length !== 1 ? 's' : ''} not yet scored
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export default function CampaignDetail({ campaign, campaignStores }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>('stores')
@@ -534,6 +666,7 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
     { key: 'stores', label: 'Stores', icon: Store },
     { key: 'submissions', label: 'Submissions', icon: BarChart3 },
     { key: 'roi', label: 'ROI', icon: TrendingUp },
+    { key: 'journey', label: 'Journey', icon: Route },
     { key: 'settings', label: 'Settings', icon: Settings },
   ]
 
@@ -896,6 +1029,11 @@ export default function CampaignDetail({ campaign, campaignStores }: Props) {
           storeCount={campaignStores.length}
           avgScore={campaign.compliance_score}
         />
+      )}
+
+      {/* Tab: Journey */}
+      {activeTab === 'journey' && (
+        <ComplianceJourneyTab campaignStores={campaignStores} />
       )}
 
       {/* Tab: Settings */}
