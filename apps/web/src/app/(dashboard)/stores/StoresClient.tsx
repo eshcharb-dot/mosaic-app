@@ -1,216 +1,225 @@
-'use client'
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
-import { Search, Store, ChevronUp, ChevronDown } from 'lucide-react'
-import { formatDistanceToNow } from 'date-fns'
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
-interface StoreRow {
-  id: string
-  name: string
-  city: string | null
-  address: string | null
-  postcode: string | null
-  retailer: string | null
-  avg_score: number | null
-  last_audit_date: string | null
-  audit_count: number
+interface Store {
+  id: string;
+  name: string;
+  address: string;
+  city: string;
+  latitude: number | null;
+  longitude: number | null;
+  created_at: string;
+  _taskCount?: number;
+  _avgScore?: number;
 }
 
-interface Props {
-  stores: StoreRow[]
-}
+export default function StoresClient() {
+  const supabase = createClient();
+  const [stores, setStores] = useState<Store[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editStore, setEditStore] = useState<Store | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
-type SortKey = 'name' | 'city' | 'avg_score' | 'last_audit_date' | 'audit_count'
-type SortDir = 'asc' | 'desc'
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data: profile } = await supabase.from('profiles').select('organization_id').eq('id', user.id).single();
+      if (!profile?.organization_id) return;
+      setOrgId(profile.organization_id);
 
-function scoreColor(score: number | null): string {
-  if (score === null) return '#b0b0d0'
-  if (score >= 80) return '#00e096'
-  if (score >= 60) return '#ffc947'
-  return '#ff6b9d'
-}
-
-function TrendArrow({ score }: { score: number | null }) {
-  // Without per-store trend from the list query, we use score thresholds as proxy indicators
-  if (score === null) return <span className="text-[#b0b0d0]">—</span>
-  if (score >= 80) return <span className="text-[#00e096] font-bold">↑</span>
-  if (score >= 60) return <span className="text-[#ffc947] font-bold">→</span>
-  return <span className="text-[#ff6b9d] font-bold">↓</span>
-}
-
-function SortIcon({ col, sortKey, sortDir }: { col: SortKey; sortKey: SortKey; sortDir: SortDir }) {
-  if (col !== sortKey) return <ChevronUp size={12} className="opacity-20" />
-  return sortDir === 'asc'
-    ? <ChevronUp size={12} className="text-[#7c6df5]" />
-    : <ChevronDown size={12} className="text-[#7c6df5]" />
-}
-
-export default function StoresClient({ stores }: Props) {
-  const router = useRouter()
-  const [search, setSearch] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('name')
-  const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [toast, setToast] = useState(false)
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortKey(key)
-      setSortDir('asc')
-    }
-  }
+      const { data } = await supabase
+        .from('stores')
+        .select('*')
+        .eq('organization_id', profile.organization_id)
+        .order('name');
+      setStores(data ?? []);
+      setLoading(false);
+    })();
+  }, [supabase]);
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    return stores
-      .filter(s => !q || s.name.toLowerCase().includes(q) || (s.city ?? '').toLowerCase().includes(q))
-      .sort((a, b) => {
-        let av: any = a[sortKey]
-        let bv: any = b[sortKey]
-        if (av === null || av === undefined) av = sortDir === 'asc' ? Infinity : -Infinity
-        if (bv === null || bv === undefined) bv = sortDir === 'asc' ? Infinity : -Infinity
-        if (typeof av === 'string') av = av.toLowerCase()
-        if (typeof bv === 'string') bv = bv.toLowerCase()
-        if (av < bv) return sortDir === 'asc' ? -1 : 1
-        if (av > bv) return sortDir === 'asc' ? 1 : -1
-        return 0
-      })
-  }, [stores, search, sortKey, sortDir])
+    if (!search.trim()) return stores;
+    const q = search.toLowerCase();
+    return stores.filter(s => s.name.toLowerCase().includes(q) || s.city?.toLowerCase().includes(q) || s.address?.toLowerCase().includes(q));
+  }, [stores, search]);
 
-  function handleAddStore() {
-    setToast(true)
-    setTimeout(() => setToast(false), 3500)
-  }
+  const toggleSelect = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
-  const cols: { key: SortKey; label: string }[] = [
-    { key: 'name', label: 'Store' },
-    { key: 'city', label: 'City' },
-    { key: 'avg_score', label: 'Avg Score' },
-    { key: 'last_audit_date', label: 'Last Audit' },
-    { key: 'audit_count', label: 'Audits' },
-  ]
+  const selectAll = () => setSelected(new Set(filtered.map(s => s.id)));
+  const clearSelection = () => setSelected(new Set());
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Delete ${selected.size} stores? This cannot be undone.`)) return;
+    await supabase.from('stores').delete().in('id', [...selected]);
+    setStores(prev => prev.filter(s => !selected.has(s.id)));
+    clearSelection();
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editStore) return;
+    setSaving(true);
+    await supabase.from('stores').update({
+      name: editStore.name,
+      address: editStore.address,
+      city: editStore.city,
+      latitude: editStore.latitude,
+      longitude: editStore.longitude,
+    }).eq('id', editStore.id);
+    setStores(prev => prev.map(s => s.id === editStore.id ? editStore : s));
+    setSaving(false);
+    setEditStore(null);
+  };
+
+  const handleCSVImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !orgId) return;
+    setImporting(true);
+    const text = await file.text();
+    const lines = text.trim().split('\n').slice(1); // skip header
+    const rows = lines.map(line => {
+      const [name, address, city, lat, lng] = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+      return { name, address, city, latitude: lat ? parseFloat(lat) : null, longitude: lng ? parseFloat(lng) : null, organization_id: orgId };
+    }).filter(r => r.name);
+
+    if (rows.length > 0) {
+      const { data } = await supabase.from('stores').upsert(rows, { onConflict: 'name,organization_id' }).select();
+      if (data) setStores(prev => {
+        const updated = [...prev];
+        data.forEach(newStore => {
+          const idx = updated.findIndex(s => s.id === newStore.id);
+          idx >= 0 ? (updated[idx] = newStore) : updated.push(newStore);
+        });
+        return updated.sort((a, b) => a.name.localeCompare(b.name));
+      });
+    }
+    setImporting(false);
+    e.target.value = '';
+  };
+
+  const card = { background: '#0c0c18', border: '1px solid #222240', borderRadius: 12 } as const;
 
   return (
-    <div className="p-8 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+    <div style={{ padding: '32px 40px', background: '#030305', minHeight: '100vh' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1 className="text-3xl font-black text-white tracking-tight">Stores</h1>
-          <p className="text-[#b0b0d0] mt-1">
-            {stores.length} store{stores.length !== 1 ? 's' : ''} across all campaigns
-          </p>
+          <h1 style={{ fontSize: 28, fontWeight: 700, color: '#fff', margin: 0 }}>Stores</h1>
+          <p style={{ color: '#b0b0d0', margin: '4px 0 0', fontSize: 14 }}>{stores.length} stores in your organization</p>
         </div>
-        <button
-          onClick={handleAddStore}
-          className="flex items-center gap-2 bg-gradient-to-r from-[#7c6df5] to-[#00d4d4] text-white font-bold px-5 py-2.5 rounded-xl hover:opacity-90 transition-opacity text-sm"
-        >
-          <Store size={15} />
-          Add Store
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <label style={{ padding: '10px 18px', background: 'transparent', border: '1px solid #222240', borderRadius: 8, color: '#b0b0d0', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {importing ? 'Importing...' : '⬆ Import CSV'}
+            <input type="file" accept=".csv" onChange={handleCSVImport} style={{ display: 'none' }} />
+          </label>
+          <a
+            href={`data:text/csv;charset=utf-8,name,address,city,latitude,longitude\n${stores.map(s => `"${s.name}","${s.address ?? ''}","${s.city ?? ''}",${s.latitude ?? ''},${s.longitude ?? ''}`).join('\n')}`}
+            download="stores.csv"
+            style={{ padding: '10px 18px', background: 'transparent', border: '1px solid #222240', borderRadius: 8, color: '#b0b0d0', textDecoration: 'none', fontSize: 14 }}
+          >
+            ⬇ Export CSV
+          </a>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-5 max-w-sm">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#b0b0d0]" />
+      {/* Search + bulk actions */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, alignItems: 'center' }}>
         <input
           type="text"
-          placeholder="Search by store name or city…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full bg-[#0c0c18] border border-[#222240] rounded-xl pl-9 pr-4 py-2.5 text-white text-sm outline-none focus:border-[#7c6df5] transition-colors placeholder:text-[#b0b0d0]/50"
+          placeholder="Search stores..."
+          style={{ background: '#0c0c18', border: '1px solid #222240', borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, flex: 1, outline: 'none' }}
         />
+        {selected.size > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ color: '#b0b0d0', fontSize: 13 }}>{selected.size} selected</span>
+            <button onClick={handleBulkDelete} style={{ padding: '8px 16px', background: '#ff4d6d22', border: '1px solid #ff4d6d', borderRadius: 8, color: '#ff4d6d', cursor: 'pointer', fontSize: 13 }}>Delete</button>
+            <button onClick={clearSelection} style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #222240', borderRadius: 8, color: '#b0b0d0', cursor: 'pointer', fontSize: 13 }}>Deselect</button>
+          </div>
+        )}
       </div>
 
       {/* Table */}
-      <div className="bg-[#0c0c18] border border-[#222240] rounded-2xl overflow-hidden">
-        {/* Header row */}
-        <div className="grid grid-cols-[2fr_1fr_120px_160px_80px_60px] gap-4 px-6 py-3 border-b border-[#222240] text-xs font-semibold text-[#b0b0d0] uppercase tracking-wider">
-          {cols.map(col => (
-            <button
-              key={col.key}
-              onClick={() => toggleSort(col.key)}
-              className="flex items-center gap-1 hover:text-white transition-colors text-left"
-            >
-              {col.label}
-              <SortIcon col={col.key} sortKey={sortKey} sortDir={sortDir} />
-            </button>
+      <div style={card}>
+        <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 1fr 100px 100px 80px', gap: 0, borderBottom: '1px solid #222240' }}>
+          {['', 'Store Name', 'Address', 'City', 'Coordinates', ''].map((h, i) => (
+            <div key={i} style={{ padding: '12px 16px', color: '#b0b0d0', fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {h === '' && i === 0 ? (
+                <input type="checkbox" checked={selected.size === filtered.length && filtered.length > 0} onChange={e => e.target.checked ? selectAll() : clearSelection()} style={{ accentColor: '#7c6df5' }} />
+              ) : h}
+            </div>
           ))}
-          <span>Trend</span>
         </div>
-
-        {/* Rows */}
-        {filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center">
-            <Store size={28} className="text-[#b0b0d0] opacity-30 mb-3" />
-            {stores.length === 0 ? (
-              <>
-                <p className="text-white font-semibold">No stores yet</p>
-                <p className="text-[#b0b0d0] text-sm mt-1">Stores appear here once you upload them via a campaign.</p>
-              </>
-            ) : (
-              <>
-                <p className="text-white font-semibold">No matches</p>
-                <button onClick={() => setSearch('')} className="text-[#7c6df5] text-sm mt-2 hover:underline">
-                  Clear search
-                </button>
-              </>
-            )}
-          </div>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#b0b0d0' }}>Loading stores...</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#b0b0d0' }}>No stores found</div>
         ) : (
-          <div className="divide-y divide-[#222240]">
-            {filtered.map(store => (
-              <div
-                key={store.id}
-                onClick={() => router.push(`/stores/${store.id}`)}
-                className="grid grid-cols-[2fr_1fr_120px_160px_80px_60px] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-colors cursor-pointer"
-              >
-                <div>
-                  <div className="font-medium text-white truncate">{store.name}</div>
-                  {store.retailer && (
-                    <div className="text-xs text-[#b0b0d0] truncate">{store.retailer}</div>
-                  )}
-                </div>
-                <div className="text-sm text-[#b0b0d0] truncate">{store.city ?? '—'}</div>
-                <div>
-                  {store.avg_score !== null ? (
-                    <span
-                      className="font-bold text-sm"
-                      style={{ color: scoreColor(store.avg_score) }}
-                    >
-                      {store.avg_score}
-                    </span>
-                  ) : (
-                    <span className="text-[#b0b0d0] text-sm">—</span>
-                  )}
-                </div>
-                <div className="text-sm text-[#b0b0d0]">
-                  {store.last_audit_date
-                    ? formatDistanceToNow(new Date(store.last_audit_date), { addSuffix: true })
-                    : '—'}
-                </div>
-                <div className="text-sm text-[#b0b0d0]">{store.audit_count}</div>
-                <div>
-                  <TrendArrow score={store.avg_score} />
-                </div>
+          filtered.map((store, i) => (
+            <div key={store.id} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 1fr 100px 100px 80px', gap: 0, borderBottom: i < filtered.length - 1 ? '1px solid #1a1a2e' : 'none', background: selected.has(store.id) ? '#0a0a20' : 'transparent' }}>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center' }}>
+                <input type="checkbox" checked={selected.has(store.id)} onChange={() => toggleSelect(store.id)} style={{ accentColor: '#7c6df5' }} />
               </div>
-            ))}
-          </div>
-        )}
-
-        {filtered.length > 0 && (
-          <div className="px-6 py-3 border-t border-[#222240] text-xs text-[#b0b0d0]">
-            {filtered.length} of {stores.length} stores
-          </div>
+              <div style={{ padding: '14px 16px', color: '#fff', fontSize: 14, fontWeight: 500 }}>{store.name}</div>
+              <div style={{ padding: '14px 16px', color: '#b0b0d0', fontSize: 13 }}>{store.address ?? '—'}</div>
+              <div style={{ padding: '14px 16px', color: '#b0b0d0', fontSize: 13 }}>{store.city ?? '—'}</div>
+              <div style={{ padding: '14px 16px', color: '#b0b0d0', fontSize: 12, fontFamily: 'monospace' }}>
+                {store.latitude != null ? `${store.latitude.toFixed(3)}, ${store.longitude?.toFixed(3)}` : '—'}
+              </div>
+              <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={() => setEditStore(store)} style={{ background: 'transparent', border: 'none', color: '#7c6df5', cursor: 'pointer', fontSize: 13 }}>Edit</button>
+              </div>
+            </div>
+          ))
         )}
       </div>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#0c0c18] border border-[#222240] rounded-xl px-5 py-3 shadow-2xl text-sm text-white animate-in fade-in slide-in-from-bottom-2">
-          Use <span className="text-[#7c6df5] font-semibold">Store Upload</span> in a campaign to add stores.
+      {/* Edit modal */}
+      {editStore && (
+        <div style={{ position: 'fixed', inset: 0, background: '#030305cc', backdropFilter: 'blur(8px)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#0c0c18', border: '1px solid #222240', borderRadius: 16, padding: 32, width: 480 }}>
+            <h2 style={{ fontSize: 20, fontWeight: 700, color: '#fff', margin: '0 0 24px' }}>Edit Store</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {[
+                { label: 'Store Name', key: 'name', type: 'text' },
+                { label: 'Address', key: 'address', type: 'text' },
+                { label: 'City', key: 'city', type: 'text' },
+                { label: 'Latitude', key: 'latitude', type: 'number' },
+                { label: 'Longitude', key: 'longitude', type: 'number' },
+              ].map(({ label, key, type }) => (
+                <div key={key}>
+                  <label style={{ display: 'block', color: '#b0b0d0', fontSize: 13, marginBottom: 6 }}>{label}</label>
+                  <input
+                    type={type}
+                    value={(editStore as Record<string, unknown>)[key] as string ?? ''}
+                    onChange={e => setEditStore(prev => prev ? { ...prev, [key]: type === 'number' ? parseFloat(e.target.value) || null : e.target.value } : null)}
+                    style={{ background: '#030305', border: '1px solid #222240', borderRadius: 8, padding: '10px 14px', color: '#fff', fontSize: 14, width: '100%', boxSizing: 'border-box' }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+              <button onClick={handleSaveEdit} disabled={saving} style={{ flex: 1, padding: '11px', background: '#7c6df5', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, cursor: 'pointer' }}>
+                {saving ? 'Saving...' : 'Save Changes'}
+              </button>
+              <button onClick={() => setEditStore(null)} style={{ flex: 1, padding: '11px', background: 'transparent', color: '#b0b0d0', border: '1px solid #222240', borderRadius: 8, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
-  )
+  );
 }

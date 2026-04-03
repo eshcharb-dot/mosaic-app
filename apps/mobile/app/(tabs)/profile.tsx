@@ -228,6 +228,7 @@ export default function ProfileScreen() {
   const [taskCount, setTaskCount] = useState(0)
   const [avgScore, setAvgScore] = useState(0)
   const [referralStats, setReferralStats] = useState<ReferralStats>({ friends_joined: 0, friends_completed_task: 0 })
+  const [badgeCount, setBadgeCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [signingOut, setSigningOut] = useState(false)
 
@@ -265,6 +266,15 @@ export default function ProfileScreen() {
           const avg = scored.reduce((s: number, h: any) => s + Number(h.score), 0) / scored.length
           setAvgScore(Math.round(avg))
         }
+      }
+
+      // Load badge count
+      if (user?.id) {
+        const { count: bc } = await supabase
+          .from('collector_badges')
+          .select('id', { count: 'exact', head: true })
+          .eq('collector_id', user.id)
+        if (typeof bc === 'number') setBadgeCount(bc)
       }
 
       // Load referral stats
@@ -352,6 +362,20 @@ export default function ProfileScreen() {
                   <ReferSection profile={profile} stats={referralStats} />
                 </View>
               )}
+            </View>
+
+            {/* Badges earned */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>ACHIEVEMENTS</Text>
+              <View style={s.card}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View>
+                    <Text style={s.cardLabel}>Badges earned</Text>
+                    <Text style={[s.cardValue, { fontSize: 28, fontWeight: '900', marginTop: 2 }]}>{badgeCount}</Text>
+                  </View>
+                  <Text style={{ fontSize: 40 }}>🏅</Text>
+                </View>
+              </View>
             </View>
 
             {/* Stripe / bank account */}
