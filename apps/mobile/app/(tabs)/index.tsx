@@ -1,5 +1,5 @@
-import { useEffect, useState, useRef } from 'react'
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator } from 'react-native'
+import { useEffect, useState, useRef, useMemo } from 'react'
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, RefreshControl, ActivityIndicator, TextInput, ScrollView } from 'react-native'
 import { useRouter } from 'expo-router'
 import { MapPin, Clock, ChevronRight } from 'lucide-react-native'
 import * as Location from 'expo-location'
@@ -43,6 +43,9 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+// Alias used in filteredTasks sort logic
+const haversineDistance = haversineKm
+
 function formatDist(km: number): string {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`
 }
@@ -52,6 +55,18 @@ function distColor(km: number): string {
   if (km < 5) return '#ffd700'
   return '#ff4d6d'
 }
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+const EmptyState = ({ query, filter }: { query: string; filter: string }) => (
+  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+    <Text style={{ fontSize: 48, marginBottom: 16 }}>🔍</Text>
+    <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>No tasks found</Text>
+    <Text style={{ color: '#b0b0d0', fontSize: 14, textAlign: 'center', lineHeight: 20 }}>
+      {query ? `No tasks matching "${query}"` : `No tasks in "${filter}" filter`}
+    </Text>
+  </View>
+)
 
 export default function TaskFeedScreen() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -64,6 +79,9 @@ export default function TaskFeedScreen() {
   const [slaAuditDays, setSlaAuditDays] = useState<Record<string, number>>({})
   // SLA: map of store_id -> last_submission_at (ISO string)
   const [storeLastAudit, setStoreLastAudit] = useState<Record<string, string | null>>({})
+  // Search & filter state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilter, setActiveFilter] = useState<'All' | 'Near Me' | 'High Pay' | 'Quick Tasks'>('All')
   const router = useRouter()
   const { columns, mode } = useLayout()
 
@@ -106,7 +124,7 @@ export default function TaskFeedScreen() {
   async function loadTasks() {
     const { data } = await supabase
       .from('tasks')
-      .select('*, stores(name, address, city, lat, lng, territory_stores(territories(id, name, color))), campaigns(name, product_name, sla_minutes, planogram_url)')
+      .select('*, stores(name, address, city, lat, lng, latitude, longitude, territory_stores(territories(id, name, color))), campaigns(name, product_name, sla_minutes, planogram_url, price_per_task_cents)')
       .eq('status', 'open')
       .order('created_at', { ascending: false })
       .limit(30)
@@ -158,9 +176,44 @@ export default function TaskFeedScreen() {
 
   useEffect(() => { loadTasks() }, [])
 
-  // Sort by distance when location is available
-  const sortedTasks = userLoc
-    ? [...tasks].sort((a, b) => {
+  // userLocation shape expected by filteredTasks
+  const userLocation = userLoc ? { latitude: userLoc.lat, longitude: userLoc.lng } : null
+
+  // Filtered + sorted tasks
+  const filteredTasks = useMemo(() => {
+    let result = [...tasks]
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(t =>
+        (t as any).stores?.name?.toLowerCase().includes(q) ||
+        (t as any).campaigns?.name?.toLowerCase().includes(q)
+      )
+    }
+
+    // Active filter
+    if (activeFilter === 'High Pay') {
+      result = result.sort((a, b) => ((b as any).campaigns?.price_per_task_cents ?? 0) - ((a as any).campaigns?.price_per_task_cents ?? 0))
+    } else if (activeFilter === 'Near Me' && userLocation) {
+      result = result.sort((a, b) => {
+        const distA = (a as any).stores?.latitude && (a as any).stores?.longitude
+          ? haversineDistance(userLocation.latitude, userLocation.longitude, (a as any).stores.latitude, (a as any).stores.longitude)
+          : (a as any).stores?.lat && (a as any).stores?.lng
+          ? haversineDistance(userLocation.latitude, userLocation.longitude, (a as any).stores.lat, (a as any).stores.lng)
+          : Infinity
+        const distB = (b as any).stores?.latitude && (b as any).stores?.longitude
+          ? haversineDistance(userLocation.latitude, userLocation.longitude, (b as any).stores.latitude, (b as any).stores.longitude)
+          : (b as any).stores?.lat && (b as any).stores?.lng
+          ? haversineDistance(userLocation.latitude, userLocation.longitude, (b as any).stores.lat, (b as any).stores.lng)
+          : Infinity
+        return distA - distB
+      })
+    } else if (activeFilter === 'Quick Tasks') {
+      // No specific field yet — show all (to be wired later)
+    } else if (activeFilter === 'All' && userLoc) {
+      // Default sort by distance when location is available
+      result = result.sort((a, b) => {
         const storeA = (a as any).stores
         const storeB = (b as any).stores
         if (!storeA?.lat || !storeB?.lat) return 0
@@ -168,7 +221,10 @@ export default function TaskFeedScreen() {
         const dB = haversineKm(userLoc.lat, userLoc.lng, storeB.lat, storeB.lng)
         return dA - dB
       })
-    : tasks
+    }
+
+    return result
+  }, [tasks, searchQuery, activeFilter, userLocation, userLoc])
 
   // Payout with tier multiplier applied
   function formatPayout(payout_cents: number): { base: string; boosted: string | null; tierLabel: string | null } {
@@ -195,6 +251,52 @@ export default function TaskFeedScreen() {
         </View>
       </View>
 
+      {/* Search bar */}
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderColor: '#222240' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0c0c18', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, gap: 8 }}>
+          <Text style={{ color: '#b0b0d0', fontSize: 16 }}>🔍</Text>
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search stores or campaigns..."
+            placeholderTextColor="#b0b0d0"
+            style={{ flex: 1, color: '#fff', fontSize: 15 }}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Text style={{ color: '#b0b0d0', fontSize: 16 }}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Filter chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ paddingHorizontal: 16, paddingVertical: 8 }} contentContainerStyle={{ gap: 8 }}>
+        {(['All', 'Near Me', 'High Pay', 'Quick Tasks'] as const).map(f => (
+          <TouchableOpacity
+            key={f}
+            onPress={() => setActiveFilter(f)}
+            style={{
+              paddingHorizontal: 14, paddingVertical: 7, borderRadius: 100,
+              backgroundColor: activeFilter === f ? '#7c6df5' : '#0c0c18',
+              borderWidth: 1, borderColor: activeFilter === f ? '#7c6df5' : '#222240'
+            }}
+          >
+            <Text style={{ color: activeFilter === f ? '#fff' : '#b0b0d0', fontSize: 13, fontWeight: '600' }}>{f}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Task count + sort indicator */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingBottom: 8 }}>
+        <Text style={{ color: '#b0b0d0', fontSize: 13 }}>
+          {filteredTasks.length} task{filteredTasks.length !== 1 ? 's' : ''} available
+        </Text>
+        {activeFilter !== 'All' && (
+          <Text style={{ color: '#7c6df5', fontSize: 12, marginLeft: 4 }}>· sorted by {activeFilter.toLowerCase()}</Text>
+        )}
+      </View>
+
       {/* Body — two-pane on tablet, single-pane on phone */}
       <View style={s.body}>
         {/* Tablet sidebar */}
@@ -203,119 +305,113 @@ export default function TaskFeedScreen() {
             <Text style={{ color: '#b0b0d0', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 }}>Quick Stats</Text>
             <View style={{ backgroundColor: '#0c0c18', borderRadius: 8, padding: 12 }}>
               <Text style={{ color: '#b0b0d0', fontSize: 11 }}>Available Tasks</Text>
-              <Text style={{ color: '#7c6df5', fontSize: 24, fontWeight: '700' }}>{tasks.length}</Text>
+              <Text style={{ color: '#7c6df5', fontSize: 24, fontWeight: '700' }}>{filteredTasks.length}</Text>
             </View>
           </View>
         )}
 
         {/* Task list pane */}
         <View style={{ flex: 1 }}>
-          {sortedTasks.length === 0 ? (
-            <View style={s.center}>
-              <Text style={s.emptyTitle}>No tasks nearby right now</Text>
-              <Text style={s.emptyText}>Check back soon — new tasks appear every few minutes.</Text>
-            </View>
-          ) : (
-            <FlatList
-              key={String(columns)}
-              data={sortedTasks}
-              keyExtractor={t => t.id}
-              numColumns={columns}
-              contentContainerStyle={{ padding: 16, gap: 12 }}
-              columnWrapperStyle={columns > 1 ? { gap: 12 } : undefined}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks() }} tintColor="#7c6df5" />}
-              renderItem={({ item: task }) => {
-                const store = (task as any).stores
-                const campaign = (task as any).campaigns
-                const territory = store?.territory_stores?.[0]?.territories ?? null
-                const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
-                const dist = userLoc && store?.lat && store?.lng
-                  ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
-                  : null
-                const isPendingSync = pendingSyncIds.has(task.id)
-                const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
-                const auditFreqDays = (task as any).campaign_id ? slaAuditDays[(task as any).campaign_id] : null
-                const lastAudit = (task as any).store_id ? storeLastAudit[(task as any).store_id] : null
-                const isUrgent = isStoreOverdue(lastAudit, auditFreqDays)
-                return (
-                  <TouchableOpacity
-                    style={[s.card, isUrgent && s.cardUrgent, { width: mode === 'tablet' ? '48%' : '100%' }]}
-                    onPress={() => router.push(`/task/${task.id}`)}
-                  >
-                    <View style={s.cardTop}>
-                      <View style={s.cardInfo}>
-                        <View style={s.storeNameRow}>
-                          <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
-                          {isUrgent && (
-                            <View style={s.urgentBadge}>
-                              <Text style={s.urgentBadgeText}>URGENT</Text>
-                            </View>
-                          )}
-                          {isPendingSync && (
-                            <View style={s.offlineBadge}>
-                              <Text style={s.offlineBadgeText}>Offline</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
-                      </View>
-                      <View style={s.cardTopRight}>
-                        {/* Payout badge — show boost if silver+ */}
-                        <View style={s.payoutBadge}>
-                          {boosted ? (
-                            <>
-                              <Text style={s.payoutTextStrike}>£{base}</Text>
-                              <Text style={[s.payoutTextBoosted, { color: tierColor ?? '#00e096' }]}>
-                                £{boosted}
-                              </Text>
-                            </>
-                          ) : (
-                            <Text style={s.payoutText}>£{base}</Text>
-                          )}
-                        </View>
-                        {boosted && tierLabel && (
-                          <View style={[s.tierBoostBadge, { borderColor: (tierColor ?? '#c0c0c0') + '55', backgroundColor: (tierColor ?? '#c0c0c0') + '18' }]}>
-                            <Text style={[s.tierBoostText, { color: tierColor ?? '#c0c0c0' }]}>
-                              {tierLabel} bonus
-                            </Text>
+          <FlatList
+            key={String(columns)}
+            data={filteredTasks}
+            keyExtractor={t => t.id}
+            numColumns={columns}
+            contentContainerStyle={{ padding: 16, gap: 12, flexGrow: 1 }}
+            columnWrapperStyle={columns > 1 ? { gap: 12 } : undefined}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks() }} tintColor="#7c6df5" />}
+            ListEmptyComponent={<EmptyState query={searchQuery} filter={activeFilter} />}
+            renderItem={({ item: task }) => {
+              const store = (task as any).stores
+              const campaign = (task as any).campaigns
+              const territory = store?.territory_stores?.[0]?.territories ?? null
+              const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
+              const dist = userLoc && store?.lat && store?.lng
+                ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
+                : null
+              const isPendingSync = pendingSyncIds.has(task.id)
+              const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
+              const auditFreqDays = (task as any).campaign_id ? slaAuditDays[(task as any).campaign_id] : null
+              const lastAudit = (task as any).store_id ? storeLastAudit[(task as any).store_id] : null
+              const isUrgent = isStoreOverdue(lastAudit, auditFreqDays)
+              return (
+                <TouchableOpacity
+                  style={[s.card, isUrgent && s.cardUrgent, { width: mode === 'tablet' ? '48%' : '100%' }]}
+                  onPress={() => router.push(`/task/${task.id}`)}
+                >
+                  <View style={s.cardTop}>
+                    <View style={s.cardInfo}>
+                      <View style={s.storeNameRow}>
+                        <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
+                        {isUrgent && (
+                          <View style={s.urgentBadge}>
+                            <Text style={s.urgentBadgeText}>URGENT</Text>
                           </View>
                         )}
-                        {dist !== null && (
-                          <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
-                            <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
+                        {isPendingSync && (
+                          <View style={s.offlineBadge}>
+                            <Text style={s.offlineBadgeText}>Offline</Text>
                           </View>
                         )}
                       </View>
+                      <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
                     </View>
-                    <View style={s.cardMeta}>
-                      <View style={s.metaItem}>
-                        <MapPin size={13} color="#b0b0d0" />
-                        <Text style={s.metaText}>{store?.city}</Text>
+                    <View style={s.cardTopRight}>
+                      {/* Payout badge — show boost if silver+ */}
+                      <View style={s.payoutBadge}>
+                        {boosted ? (
+                          <>
+                            <Text style={s.payoutTextStrike}>£{base}</Text>
+                            <Text style={[s.payoutTextBoosted, { color: tierColor ?? '#00e096' }]}>
+                              £{boosted}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={s.payoutText}>£{base}</Text>
+                        )}
                       </View>
-                      <View style={s.metaItem}>
-                        <Clock size={13} color="#b0b0d0" />
-                        <Text style={s.metaText}>{campaign?.sla_minutes} min SLA</Text>
-                      </View>
-                      <View style={s.metaItem}>
-                        <Text style={s.metaTextPurple}>45s task</Text>
-                      </View>
-                      {territory && (
-                        <View style={[s.territoryPill, { borderColor: (territory.color ?? '#7c6df5') + '55', backgroundColor: (territory.color ?? '#7c6df5') + '18' }]}>
-                          <Text style={[s.territoryText, { color: territory.color ?? '#7c6df5' }]} numberOfLines={1}>
-                            {territory.name}
+                      {boosted && tierLabel && (
+                        <View style={[s.tierBoostBadge, { borderColor: (tierColor ?? '#c0c0c0') + '55', backgroundColor: (tierColor ?? '#c0c0c0') + '18' }]}>
+                          <Text style={[s.tierBoostText, { color: tierColor ?? '#c0c0c0' }]}>
+                            {tierLabel} bonus
                           </Text>
                         </View>
                       )}
+                      {dist !== null && (
+                        <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
+                          <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
+                        </View>
+                      )}
                     </View>
-                    <TouchableOpacity style={s.acceptBtn} onPress={() => router.push(`/task/${task.id}`)}>
-                      <Text style={s.acceptBtnText}>Accept & Navigate</Text>
-                      <ChevronRight size={16} color="#030305" />
-                    </TouchableOpacity>
+                  </View>
+                  <View style={s.cardMeta}>
+                    <View style={s.metaItem}>
+                      <MapPin size={13} color="#b0b0d0" />
+                      <Text style={s.metaText}>{store?.city}</Text>
+                    </View>
+                    <View style={s.metaItem}>
+                      <Clock size={13} color="#b0b0d0" />
+                      <Text style={s.metaText}>{campaign?.sla_minutes} min SLA</Text>
+                    </View>
+                    <View style={s.metaItem}>
+                      <Text style={s.metaTextPurple}>45s task</Text>
+                    </View>
+                    {territory && (
+                      <View style={[s.territoryPill, { borderColor: (territory.color ?? '#7c6df5') + '55', backgroundColor: (territory.color ?? '#7c6df5') + '18' }]}>
+                        <Text style={[s.territoryText, { color: territory.color ?? '#7c6df5' }]} numberOfLines={1}>
+                          {territory.name}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <TouchableOpacity style={s.acceptBtn} onPress={() => router.push(`/task/${task.id}`)}>
+                    <Text style={s.acceptBtnText}>Accept & Navigate</Text>
+                    <ChevronRight size={16} color="#030305" />
                   </TouchableOpacity>
-                )
-              }}
-            />
-          )}
+                </TouchableOpacity>
+              )
+            }}
+          />
         </View>
       </View>
     </View>

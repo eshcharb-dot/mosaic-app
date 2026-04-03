@@ -1,6 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound, CreditCard, FolderDown, Sun, Moon, Activity } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound, CreditCard, FolderDown, Sun, Moon, Activity, HelpCircle } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { useTheme } from '@/components/ThemeProvider'
@@ -55,6 +55,7 @@ export default function Sidebar({ user }: { user: any }) {
     { href: '/exports',     label: t('nav.exports'),     icon: FolderDown,      badge: null },
     { href: '/collectors',  label: t('nav.collectors'),  icon: Users,           badge: null },
     { href: '/performance', label: t('nav.performance') ?? 'Performance', icon: Activity, badge: null },
+    { href: '/help', label: 'Help', icon: HelpCircle, badge: null },
   ]
 
   async function handleSignOut() {

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { View, StyleSheet } from 'react-native'
+import { View, Text, StyleSheet } from 'react-native'
 import { Tabs } from 'expo-router'
 import { MapPin, Briefcase, DollarSign, User, Bell, Settings, Trophy } from 'lucide-react-native'
+import { supabase } from '../../lib/supabase'
 
 // expo-notifications may not be installed yet — guard gracefully.
 function useNotificationBadge(): number {
@@ -29,6 +30,28 @@ function useNotificationBadge(): number {
     }
 
     return () => { sub?.remove() }
+  }, [])
+
+  return count
+}
+
+// ── Open task count ───────────────────────────────────────────────────────────
+
+function useOpenTaskCount(): number | null {
+  const [count, setCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const { count: n } = await supabase
+          .from('tasks')
+          .select('id', { count: 'exact', head: true })
+          .eq('status', 'open')
+        if (typeof n === 'number') setCount(n)
+      } catch {
+        // silently ignore — badge stays hidden
+      }
+    })()
   }, [])
 
   return count
@@ -68,6 +91,10 @@ const bs = StyleSheet.create({
 
 export default function TabsLayout() {
   const badgeCount = useNotificationBadge()
+  const taskCount = useOpenTaskCount()
+
+  // Build label: "Tasks" when unknown, "Tasks (12)" once loaded
+  const tasksLabel = taskCount !== null ? `Tasks (${taskCount})` : 'Tasks'
 
   return (
     <Tabs screenOptions={{
@@ -77,7 +104,7 @@ export default function TabsLayout() {
       tabBarInactiveTintColor: '#b0b0d0',
       tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
     }}>
-      <Tabs.Screen name="index" options={{ title: 'Tasks', tabBarIcon: ({ color }) => <Briefcase size={22} color={color} /> }} />
+      <Tabs.Screen name="index" options={{ title: tasksLabel, tabBarIcon: ({ color }) => <Briefcase size={22} color={color} /> }} />
       <Tabs.Screen name="map" options={{ title: 'Nearby', tabBarIcon: ({ color }) => <MapPin size={22} color={color} /> }} />
       <Tabs.Screen name="earnings" options={{ title: 'Earnings', tabBarIcon: ({ color }) => <DollarSign size={22} color={color} /> }} />
       <Tabs.Screen name="leaderboard" options={{ title: 'Top', tabBarIcon: ({ color }) => <Trophy size={22} color={color} /> }} />
