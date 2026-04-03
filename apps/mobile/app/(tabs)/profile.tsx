@@ -13,6 +13,7 @@ import {
 import { User, CheckCircle, LogOut, CreditCard, Gift, Copy, Share2 } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { useLayout } from '@/lib/useLayout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -220,6 +221,7 @@ function ReferSection({ profile, stats }: { profile: Profile; stats: ReferralSta
 
 export default function ProfileScreen() {
   const router = useRouter()
+  const { mode } = useLayout()
 
   const [email, setEmail] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -309,84 +311,93 @@ export default function ProfileScreen() {
   const stripeConnected = !!profile?.stripe_account_id
 
   return (
-    <ScrollView style={s.container} contentContainerStyle={s.scrollContent}>
-      <View style={s.header}>
-        <Text style={s.headerTitle}>Profile</Text>
-        <User size={22} color="#7c6df5" />
-      </View>
-
-      {loading ? (
-        <View style={s.center}>
-          <ActivityIndicator color="#7c6df5" size="large" />
+    <ScrollView style={s.container} contentContainerStyle={[s.scrollContent, mode === 'tablet' && s.scrollContentTablet]}>
+      <View style={[mode === 'tablet' && s.tabletInner]}>
+        <View style={s.header}>
+          <Text style={s.headerTitle}>Profile</Text>
+          <User size={22} color="#7c6df5" />
         </View>
-      ) : (
-        <>
-          {/* Account info */}
-          <View style={s.section}>
-            <Text style={s.sectionLabel}>ACCOUNT</Text>
-            <View style={s.card}>
-              <Text style={s.cardLabel}>Email</Text>
-              <Text style={s.cardValue}>{email ?? '—'}</Text>
-            </View>
+
+        {loading ? (
+          <View style={s.center}>
+            <ActivityIndicator color="#7c6df5" size="large" />
           </View>
+        ) : (
+          <>
+            {/* Account info */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>ACCOUNT</Text>
+              <View style={s.card}>
+                <Text style={s.cardLabel}>Email</Text>
+                <Text style={s.cardValue}>{email ?? '—'}</Text>
+              </View>
+            </View>
 
-          {/* Collector Tier */}
-          {profile && (
-            <TierSection
-              profile={profile}
-              taskCount={taskCount}
-              avgScore={avgScore}
-            />
-          )}
-
-          {/* Refer & Earn */}
-          {profile && (
-            <ReferSection profile={profile} stats={referralStats} />
-          )}
-
-          {/* Stripe / bank account */}
-          <View style={s.section}>
-            <Text style={s.sectionLabel}>PAYOUTS</Text>
-            <View style={s.card}>
-              {stripeConnected ? (
-                <View style={s.stripeConnected}>
-                  <CheckCircle size={20} color="#00e096" />
-                  <Text style={s.stripeConnectedText}>Bank account connected</Text>
+            {/* Stats cards — 2-col grid on tablet */}
+            <View style={[mode === 'tablet' && s.tabletStatsGrid]}>
+              {/* Collector Tier */}
+              {profile && (
+                <View style={[mode === 'tablet' && s.tabletStatsCell]}>
+                  <TierSection
+                    profile={profile}
+                    taskCount={taskCount}
+                    avgScore={avgScore}
+                  />
                 </View>
-              ) : (
-                <>
-                  <Text style={s.cardLabel}>Bank account</Text>
-                  <Text style={s.cardSubtext}>
-                    Connect your bank to receive payouts directly.
-                  </Text>
-                  <TouchableOpacity style={s.connectBtn} onPress={handleConnectStripe}>
-                    <CreditCard size={16} color="#ffffff" />
-                    <Text style={s.connectBtnText}>Connect bank account</Text>
-                  </TouchableOpacity>
-                </>
+              )}
+
+              {/* Refer & Earn */}
+              {profile && (
+                <View style={[mode === 'tablet' && s.tabletStatsCell]}>
+                  <ReferSection profile={profile} stats={referralStats} />
+                </View>
               )}
             </View>
-          </View>
 
-          {/* Sign out */}
-          <View style={s.section}>
-            <TouchableOpacity
-              style={[s.signOutBtn, signingOut && s.signOutBtnDisabled]}
-              onPress={handleSignOut}
-              disabled={signingOut}
-            >
-              {signingOut ? (
-                <ActivityIndicator size="small" color="#ff4d6d" />
-              ) : (
-                <>
-                  <LogOut size={16} color="#ff4d6d" />
-                  <Text style={s.signOutText}>Sign out</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
+            {/* Stripe / bank account */}
+            <View style={s.section}>
+              <Text style={s.sectionLabel}>PAYOUTS</Text>
+              <View style={s.card}>
+                {stripeConnected ? (
+                  <View style={s.stripeConnected}>
+                    <CheckCircle size={20} color="#00e096" />
+                    <Text style={s.stripeConnectedText}>Bank account connected</Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={s.cardLabel}>Bank account</Text>
+                    <Text style={s.cardSubtext}>
+                      Connect your bank to receive payouts directly.
+                    </Text>
+                    <TouchableOpacity style={s.connectBtn} onPress={handleConnectStripe}>
+                      <CreditCard size={16} color="#ffffff" />
+                      <Text style={s.connectBtnText}>Connect bank account</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </View>
+            </View>
+
+            {/* Sign out */}
+            <View style={s.section}>
+              <TouchableOpacity
+                style={[s.signOutBtn, signingOut && s.signOutBtnDisabled]}
+                onPress={handleSignOut}
+                disabled={signingOut}
+              >
+                {signingOut ? (
+                  <ActivityIndicator size="small" color="#ff4d6d" />
+                ) : (
+                  <>
+                    <LogOut size={16} color="#ff4d6d" />
+                    <Text style={s.signOutText}>Sign out</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </View>
     </ScrollView>
   )
 }
@@ -396,6 +407,14 @@ export default function ProfileScreen() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#030305' },
   scrollContent: { paddingBottom: 48 },
+  scrollContentTablet: { alignItems: 'center' },
+  tabletInner: { width: '100%', maxWidth: 600 },
+  tabletStatsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 0,
+  },
+  tabletStatsCell: { flex: 1, minWidth: 280 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 64 },
 
   header: {

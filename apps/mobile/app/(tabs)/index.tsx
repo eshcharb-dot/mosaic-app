@@ -5,6 +5,7 @@ import { MapPin, Clock, ChevronRight } from 'lucide-react-native'
 import * as Location from 'expo-location'
 import { supabase } from '../../lib/supabase'
 import { getPendingSyncTaskIds } from '../../lib/offlineQueue'
+import { useLayout } from '@/lib/useLayout'
 import type { Task } from '@mosaic/types'
 
 // SLA audit urgency: returns true if the store hasn't been audited within audit_frequency_days
@@ -64,6 +65,7 @@ export default function TaskFeedScreen() {
   // SLA: map of store_id -> last_submission_at (ISO string)
   const [storeLastAudit, setStoreLastAudit] = useState<Record<string, string | null>>({})
   const router = useRouter()
+  const { columns, mode } = useLayout()
 
   // Request location silently — no blocker if denied
   useEffect(() => {
@@ -193,112 +195,136 @@ export default function TaskFeedScreen() {
         </View>
       </View>
 
-      {sortedTasks.length === 0 ? (
-        <View style={s.center}>
-          <Text style={s.emptyTitle}>No tasks nearby right now</Text>
-          <Text style={s.emptyText}>Check back soon — new tasks appear every few minutes.</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={sortedTasks}
-          keyExtractor={t => t.id}
-          contentContainerStyle={{ padding: 16, gap: 12 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks() }} tintColor="#7c6df5" />}
-          renderItem={({ item: task }) => {
-            const store = (task as any).stores
-            const campaign = (task as any).campaigns
-            const territory = store?.territory_stores?.[0]?.territories ?? null
-            const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
-            const dist = userLoc && store?.lat && store?.lng
-              ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
-              : null
-            const isPendingSync = pendingSyncIds.has(task.id)
-            const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
-            const auditFreqDays = (task as any).campaign_id ? slaAuditDays[(task as any).campaign_id] : null
-            const lastAudit = (task as any).store_id ? storeLastAudit[(task as any).store_id] : null
-            const isUrgent = isStoreOverdue(lastAudit, auditFreqDays)
-            return (
-              <TouchableOpacity style={[s.card, isUrgent && s.cardUrgent]} onPress={() => router.push(`/task/${task.id}`)}>
-                <View style={s.cardTop}>
-                  <View style={s.cardInfo}>
-                    <View style={s.storeNameRow}>
-                      <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
-                      {isUrgent && (
-                        <View style={s.urgentBadge}>
-                          <Text style={s.urgentBadgeText}>URGENT</Text>
+      {/* Body — two-pane on tablet, single-pane on phone */}
+      <View style={s.body}>
+        {/* Tablet sidebar */}
+        {mode === 'tablet' && (
+          <View style={{ width: 200, borderRightWidth: 1, borderColor: '#222240', padding: 16, gap: 12 }}>
+            <Text style={{ color: '#b0b0d0', fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 }}>Quick Stats</Text>
+            <View style={{ backgroundColor: '#0c0c18', borderRadius: 8, padding: 12 }}>
+              <Text style={{ color: '#b0b0d0', fontSize: 11 }}>Available Tasks</Text>
+              <Text style={{ color: '#7c6df5', fontSize: 24, fontWeight: '700' }}>{tasks.length}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* Task list pane */}
+        <View style={{ flex: 1 }}>
+          {sortedTasks.length === 0 ? (
+            <View style={s.center}>
+              <Text style={s.emptyTitle}>No tasks nearby right now</Text>
+              <Text style={s.emptyText}>Check back soon — new tasks appear every few minutes.</Text>
+            </View>
+          ) : (
+            <FlatList
+              key={String(columns)}
+              data={sortedTasks}
+              keyExtractor={t => t.id}
+              numColumns={columns}
+              contentContainerStyle={{ padding: 16, gap: 12 }}
+              columnWrapperStyle={columns > 1 ? { gap: 12 } : undefined}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadTasks() }} tintColor="#7c6df5" />}
+              renderItem={({ item: task }) => {
+                const store = (task as any).stores
+                const campaign = (task as any).campaigns
+                const territory = store?.territory_stores?.[0]?.territories ?? null
+                const { base, boosted, tierLabel } = formatPayout(task.payout_cents)
+                const dist = userLoc && store?.lat && store?.lng
+                  ? haversineKm(userLoc.lat, userLoc.lng, store.lat, store.lng)
+                  : null
+                const isPendingSync = pendingSyncIds.has(task.id)
+                const tierColor = collectorTier ? TIER_COLORS[collectorTier] : null
+                const auditFreqDays = (task as any).campaign_id ? slaAuditDays[(task as any).campaign_id] : null
+                const lastAudit = (task as any).store_id ? storeLastAudit[(task as any).store_id] : null
+                const isUrgent = isStoreOverdue(lastAudit, auditFreqDays)
+                return (
+                  <TouchableOpacity
+                    style={[s.card, isUrgent && s.cardUrgent, { width: mode === 'tablet' ? '48%' : '100%' }]}
+                    onPress={() => router.push(`/task/${task.id}`)}
+                  >
+                    <View style={s.cardTop}>
+                      <View style={s.cardInfo}>
+                        <View style={s.storeNameRow}>
+                          <Text style={s.storeName} numberOfLines={1}>{store?.name}</Text>
+                          {isUrgent && (
+                            <View style={s.urgentBadge}>
+                              <Text style={s.urgentBadgeText}>URGENT</Text>
+                            </View>
+                          )}
+                          {isPendingSync && (
+                            <View style={s.offlineBadge}>
+                              <Text style={s.offlineBadgeText}>Offline</Text>
+                            </View>
+                          )}
                         </View>
-                      )}
-                      {isPendingSync && (
-                        <View style={s.offlineBadge}>
-                          <Text style={s.offlineBadgeText}>Offline</Text>
+                        <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
+                      </View>
+                      <View style={s.cardTopRight}>
+                        {/* Payout badge — show boost if silver+ */}
+                        <View style={s.payoutBadge}>
+                          {boosted ? (
+                            <>
+                              <Text style={s.payoutTextStrike}>£{base}</Text>
+                              <Text style={[s.payoutTextBoosted, { color: tierColor ?? '#00e096' }]}>
+                                £{boosted}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text style={s.payoutText}>£{base}</Text>
+                          )}
                         </View>
-                      )}
+                        {boosted && tierLabel && (
+                          <View style={[s.tierBoostBadge, { borderColor: (tierColor ?? '#c0c0c0') + '55', backgroundColor: (tierColor ?? '#c0c0c0') + '18' }]}>
+                            <Text style={[s.tierBoostText, { color: tierColor ?? '#c0c0c0' }]}>
+                              {tierLabel} bonus
+                            </Text>
+                          </View>
+                        )}
+                        {dist !== null && (
+                          <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
+                            <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                    <Text style={s.productName} numberOfLines={1}>{campaign?.product_name}</Text>
-                  </View>
-                  <View style={s.cardTopRight}>
-                    {/* Payout badge — show boost if silver+ */}
-                    <View style={s.payoutBadge}>
-                      {boosted ? (
-                        <>
-                          <Text style={s.payoutTextStrike}>£{base}</Text>
-                          <Text style={[s.payoutTextBoosted, { color: tierColor ?? '#00e096' }]}>
-                            £{boosted}
+                    <View style={s.cardMeta}>
+                      <View style={s.metaItem}>
+                        <MapPin size={13} color="#b0b0d0" />
+                        <Text style={s.metaText}>{store?.city}</Text>
+                      </View>
+                      <View style={s.metaItem}>
+                        <Clock size={13} color="#b0b0d0" />
+                        <Text style={s.metaText}>{campaign?.sla_minutes} min SLA</Text>
+                      </View>
+                      <View style={s.metaItem}>
+                        <Text style={s.metaTextPurple}>45s task</Text>
+                      </View>
+                      {territory && (
+                        <View style={[s.territoryPill, { borderColor: (territory.color ?? '#7c6df5') + '55', backgroundColor: (territory.color ?? '#7c6df5') + '18' }]}>
+                          <Text style={[s.territoryText, { color: territory.color ?? '#7c6df5' }]} numberOfLines={1}>
+                            {territory.name}
                           </Text>
-                        </>
-                      ) : (
-                        <Text style={s.payoutText}>£{base}</Text>
+                        </View>
                       )}
                     </View>
-                    {boosted && tierLabel && (
-                      <View style={[s.tierBoostBadge, { borderColor: (tierColor ?? '#c0c0c0') + '55', backgroundColor: (tierColor ?? '#c0c0c0') + '18' }]}>
-                        <Text style={[s.tierBoostText, { color: tierColor ?? '#c0c0c0' }]}>
-                          {tierLabel} bonus
-                        </Text>
-                      </View>
-                    )}
-                    {dist !== null && (
-                      <View style={[s.distBadge, { borderColor: distColor(dist) + '44' }]}>
-                        <Text style={[s.distText, { color: distColor(dist) }]}>{formatDist(dist)}</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-                <View style={s.cardMeta}>
-                  <View style={s.metaItem}>
-                    <MapPin size={13} color="#b0b0d0" />
-                    <Text style={s.metaText}>{store?.city}</Text>
-                  </View>
-                  <View style={s.metaItem}>
-                    <Clock size={13} color="#b0b0d0" />
-                    <Text style={s.metaText}>{campaign?.sla_minutes} min SLA</Text>
-                  </View>
-                  <View style={s.metaItem}>
-                    <Text style={s.metaTextPurple}>45s task</Text>
-                  </View>
-                  {territory && (
-                    <View style={[s.territoryPill, { borderColor: (territory.color ?? '#7c6df5') + '55', backgroundColor: (territory.color ?? '#7c6df5') + '18' }]}>
-                      <Text style={[s.territoryText, { color: territory.color ?? '#7c6df5' }]} numberOfLines={1}>
-                        {territory.name}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                <TouchableOpacity style={s.acceptBtn} onPress={() => router.push(`/task/${task.id}`)}>
-                  <Text style={s.acceptBtnText}>Accept & Navigate</Text>
-                  <ChevronRight size={16} color="#030305" />
-                </TouchableOpacity>
-              </TouchableOpacity>
-            )
-          }}
-        />
-      )}
+                    <TouchableOpacity style={s.acceptBtn} onPress={() => router.push(`/task/${task.id}`)}>
+                      <Text style={s.acceptBtnText}>Accept & Navigate</Text>
+                      <ChevronRight size={16} color="#030305" />
+                    </TouchableOpacity>
+                  </TouchableOpacity>
+                )
+              }}
+            />
+          )}
+        </View>
+      </View>
     </View>
   )
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#030305' },
+  body: { flex: 1, flexDirection: 'row' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingTop: 60, borderBottomWidth: 1, borderBottomColor: '#222240' },
   headerTitle: { fontSize: 28, fontWeight: '900', color: '#ffffff', letterSpacing: -0.5 },

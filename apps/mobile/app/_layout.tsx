@@ -10,6 +10,7 @@ import {
   addNotificationResponseListener,
 } from '../lib/notifications'
 import { syncPendingSubmissions } from '../lib/syncManager'
+import { ThemeProvider } from '../lib/ThemeContext'
 
 // Configure notification presentation behaviour as early as possible.
 configureNotificationHandler()
@@ -123,21 +124,23 @@ export default function RootLayout() {
   }, [session?.user?.id])
 
   return (
-    <View style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#030305' } }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="task/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="capture/[taskId]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
-        <Stack.Screen name="capture/success" options={{ presentation: 'modal', gestureEnabled: false }} />
-        <Stack.Screen name="auth" />
-      </Stack>
-      {syncToast && (
-        <SyncToast
-          key={syncToast.key}
-          message={syncToast.message}
-          visible
-        />
-      )}
-    </View>
+    <ThemeProvider>
+      <View style={{ flex: 1 }}>
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#030305' } }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="task/[id]" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="capture/[taskId]" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+          <Stack.Screen name="capture/success" options={{ presentation: 'modal', gestureEnabled: false }} />
+          <Stack.Screen name="auth" />
+        </Stack>
+        {syncToast && (
+          <SyncToast
+            key={syncToast.key}
+            message={syncToast.message}
+            visible
+          />
+        )}
+      </View>
+    </ThemeProvider>
   )
 }

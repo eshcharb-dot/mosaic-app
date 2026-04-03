@@ -20,7 +20,8 @@
     "reports": "Reports",
     "exports": "Exports",
     "templates": "Templates",
-    "roiCalculator": "ROI Calculator"
+    "roiCalculator": "ROI Calculator",
+    "performance": "Performance"
   },
   "dashboard": {
     "title": "Dashboard",

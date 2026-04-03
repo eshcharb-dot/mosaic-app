@@ -16,6 +16,7 @@ import {
 import { Settings, Bell, Map, Trash2, LogOut, Info } from 'lucide-react-native'
 import { useRouter } from 'expo-router'
 import { supabase } from '../../lib/supabase'
+import { useAppTheme } from '../../lib/ThemeContext'
 
 // ── Module guards ─────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ const ASYNC_KEY_SHOW_DISTANCE = 'showDistance'
 
 export default function SettingsScreen() {
   const router = useRouter()
+  const { tokens, mode, setMode } = useAppTheme()
 
   const [pushEnabled, setPushEnabled] = useState(true)
   const [showDistance, setShowDistance] = useState(true)
@@ -217,6 +219,36 @@ export default function SettingsScreen() {
               trackColor={{ false: '#222240', true: '#7c6df5' }}
               thumbColor="#ffffff"
             />
+          </View>
+        </View>
+      </View>
+
+      {/* Appearance section */}
+      <View style={s.section}>
+        <View style={{ marginTop: 24 }}>
+          <Text style={{ color: tokens.muted, fontSize: 12, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
+            Appearance
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {(['dark', 'system', 'light'] as const).map((m) => (
+              <TouchableOpacity
+                key={m}
+                onPress={() => setMode(m)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 10,
+                  borderRadius: 8,
+                  alignItems: 'center',
+                  backgroundColor: mode === m ? tokens.purple : tokens.card,
+                  borderWidth: 1,
+                  borderColor: mode === m ? tokens.purple : tokens.border,
+                }}
+              >
+                <Text style={{ color: mode === m ? '#fff' : tokens.muted, fontSize: 13, fontWeight: '600', textTransform: 'capitalize' }}>
+                  {m}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </View>
