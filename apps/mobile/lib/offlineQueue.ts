@@ -5,7 +5,8 @@ const QUEUE_KEY = 'mosaic_offline_queue'
 export type QueuedSubmission = {
   id: string          // local UUID
   taskId: string
-  photoUri: string    // local file URI
+  photoUris: string[] // local file URIs (batch)
+  photoUri?: string   // kept for backward compatibility with older queue entries
   capturedAt: string
   retryCount: number
 }
@@ -47,17 +48,19 @@ function generateId(): string {
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 
-export async function enqueueSubmission(taskId: string, photoUri: string): Promise<string> {
+export async function enqueueSubmission(taskId: string, photoUris: string | string[]): Promise<string> {
   const storage = getStorage()
   const localId = generateId()
 
   if (!storage) return localId   // no-op in envs without AsyncStorage
 
+  const urisArray = Array.isArray(photoUris) ? photoUris : [photoUris]
+
   const existing = await getQueue()
   const entry: QueuedSubmission = {
     id: localId,
     taskId,
-    photoUri,
+    photoUris: urisArray,
     capturedAt: new Date().toISOString(),
     retryCount: 0,
   }

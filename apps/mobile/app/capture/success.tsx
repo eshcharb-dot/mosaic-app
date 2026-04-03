@@ -12,10 +12,11 @@ const OFFLINE_AMBER = '#ffa040'
 // Works on iOS and Android with zero native modules.
 
 export default function SuccessScreen() {
-  const { payout, mode } = useLocalSearchParams<{ payout?: string; mode?: string }>()
+  const { payout, mode, count } = useLocalSearchParams<{ payout?: string; mode?: string; count?: string }>()
   const router = useRouter()
 
   const isOffline = mode === 'offline'
+  const photoCount = count ? parseInt(count, 10) : 1
 
   const [scoreState, setScoreState] = useState<'analyzing' | 'done'>('analyzing')
   const [displayScore, setDisplayScore] = useState(0)
@@ -97,6 +98,9 @@ export default function SuccessScreen() {
           </Animated.View>
 
           <Text style={s.heading}>Saved offline</Text>
+          {photoCount > 1 && (
+            <Text style={s.photoCountText}>{photoCount} photos saved</Text>
+          )}
           <Text style={[s.subtext, { color: OFFLINE_AMBER }]}>
             will sync when connected
           </Text>
@@ -142,6 +146,9 @@ export default function SuccessScreen() {
         </Animated.View>
 
         <Text style={s.heading}>Submitted!</Text>
+        {photoCount > 1 && (
+          <Text style={s.photoCountText}>{photoCount} photos submitted</Text>
+        )}
 
         {/* Analyzing / Score section */}
         {scoreState === 'analyzing' ? (
@@ -346,6 +353,12 @@ const s = StyleSheet.create({
     fontWeight: '900',
     color: '#ffffff',
     letterSpacing: -0.5,
+  },
+  photoCountText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#b0b0d0',
+    marginTop: -8,
   },
   subtext: {
     fontSize: 14,

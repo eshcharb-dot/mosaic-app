@@ -12,6 +12,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { MapPin, Clock, ChevronLeft, Zap } from 'lucide-react-native'
 import { supabase } from '../../lib/supabase'
+import { useLocationVerify } from '@/lib/useLocationVerify'
 import type { Task, Store, Campaign } from '@mosaic/types'
 
 type TaskWithRelations = Task & {
@@ -27,10 +28,18 @@ export default function TaskDetailScreen() {
   const [accepting, setAccepting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const { verify, verifying, result: locationResult } = useLocationVerify()
+  const [locationResultState, setLocationResultState] = useState<typeof locationResult>(null)
+
   useEffect(() => {
     if (!id) return
     fetchTask()
   }, [id])
+
+  // Sync hook result into local state so we can clear it
+  useEffect(() => {
+    setLocationResultState(locationResult)
+  }, [locationResult])
 
   async function fetchTask() {
     setLoading(true)
@@ -49,7 +58,7 @@ export default function TaskDetailScreen() {
     setLoading(false)
   }
 
-  async function handleAccept() {
+  async function proceedToCapture(locationVerified: boolean) {
     if (!task) return
     setAccepting(true)
 
@@ -75,7 +84,32 @@ export default function TaskDetailScreen() {
       return
     }
 
-    router.replace(`/capture/${task.id}`)
+    router.replace({
+      pathname: `/capture/${task.id}`,
+      params: { locationVerified: locationVerified ? 'true' : 'false' },
+    })
+  }
+
+  async function handleAccept() {
+    if (!task) return
+
+    const store = task.stores
+    // If store has no coords, skip verification
+    if (!store?.lat || !store?.lng) {
+      await proceedToCapture(false)
+      return
+    }
+
+    const verified = await verify(store.lat, store.lng)
+    if (verified) {
+      await proceedToCapture(true)
+    }
+    // If not verified, the locationResult UI will render below
+  }
+
+  async function handleOverride() {
+    setLocationResultState(null)
+    await proceedToCapture(false)
   }
 
   if (loading) {
@@ -165,15 +199,40 @@ export default function TaskDetailScreen() {
           </View>
         ) : null}
 
+        {/* Location verification status */}
+        {verifying && (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, backgroundColor: '#0c0c18', borderRadius: 8, marginTop: 12 }}>
+            <ActivityIndicator size="small" color="#7c6df5" />
+            <Text style={{ color: '#b0b0d0', fontSize: 14 }}>Verifying your location...</Text>
+          </View>
+        )}
+
+        {locationResultState && !locationResultState.verified && (
+          <View style={{ padding: 16, backgroundColor: '#1a0a0a', borderRadius: 8, borderWidth: 1, borderColor: '#ff4d6d', marginTop: 12 }}>
+            <Text style={{ color: '#ff4d6d', fontSize: 15, fontWeight: '700', marginBottom: 6 }}>Too far from store</Text>
+            <Text style={{ color: '#b0b0d0', fontSize: 13, marginBottom: 12 }}>
+              You are {locationResultState.distance}m away. Must be within 200m.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={handleOverride} style={{ flex: 1, padding: 10, borderRadius: 6, backgroundColor: '#222240', alignItems: 'center' }}>
+                <Text style={{ color: '#b0b0d0', fontSize: 13 }}>Override (Testing)</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setLocationResultState(null)} style={{ flex: 1, padding: 10, borderRadius: 6, backgroundColor: '#ff4d6d22', borderWidth: 1, borderColor: '#ff4d6d', alignItems: 'center' }}>
+                <Text style={{ color: '#ff4d6d', fontSize: 13 }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={s.spacer} />
       </ScrollView>
 
       {/* Accept CTA */}
       <View style={s.footer}>
         <TouchableOpacity
-          style={[s.acceptBtn, accepting && s.acceptBtnDisabled]}
+          style={[s.acceptBtn, (accepting || verifying) && s.acceptBtnDisabled]}
           onPress={handleAccept}
-          disabled={accepting}
+          disabled={accepting || verifying}
         >
           {accepting ? (
             <ActivityIndicator color="#030305" size="small" />

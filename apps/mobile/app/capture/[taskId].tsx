@@ -8,6 +8,7 @@ import {
   Image,
   Alert,
   Dimensions,
+  Platform,
 } from 'react-native'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera'
@@ -29,8 +30,10 @@ const FRAME_H = SCREEN_HEIGHT * 0.55
 const CORNER = 22  // corner bracket length
 const CORNER_THICKNESS = 3
 
+const MAX_PHOTOS = 5
+
 export default function CaptureScreen() {
-  const { taskId } = useLocalSearchParams<{ taskId: string }>()
+  const { taskId, locationVerified } = useLocalSearchParams<{ taskId: string; locationVerified?: string }>()
   const router = useRouter()
   const isOnline = useIsOnline()
 
@@ -38,7 +41,7 @@ export default function CaptureScreen() {
   const [task, setTask] = useState<TaskWithRelations | null>(null)
   const [loadingTask, setLoadingTask] = useState(true)
   const [facing] = useState<CameraType>('back')
-  const [capturedUri, setCapturedUri] = useState<string | null>(null)
+  const [photos, setPhotos] = useState<string[]>([])
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -59,29 +62,25 @@ export default function CaptureScreen() {
     setLoadingTask(false)
   }
 
-  async function handleCapture() {
+  async function takePicture() {
     if (!cameraRef.current) return
+    if (photos.length >= MAX_PHOTOS) return
     const photo = await cameraRef.current.takePictureAsync({ quality: 0.85 })
     if (photo) {
-      setCapturedUri(photo.uri)
+      setPhotos(prev => [...prev, photo.uri])
       setUploadError(null)
     }
   }
 
-  function handleRetake() {
-    setCapturedUri(null)
-    setUploadError(null)
-  }
-
-  async function handleUsePhoto() {
-    if (!capturedUri || !task) return
+  async function handleSubmit() {
+    if (!photos.length || !task) return
     setUploading(true)
     setUploadError(null)
 
     // ── Offline path ───────────────────────────────────────────────────────────
     if (!isOnline) {
       try {
-        const localId = await enqueueSubmission(task.id, capturedUri)
+        const localId = await enqueueSubmission(task.id, photos)
         await markTaskPendingSync(task.id)
         router.replace({
           pathname: '/capture/success',
@@ -90,6 +89,7 @@ export default function CaptureScreen() {
             taskId: task.id,
             submissionId: localId,
             mode: 'offline',
+            count: String(photos.length),
           },
         })
       } catch (err) {
@@ -99,7 +99,7 @@ export default function CaptureScreen() {
       return
     }
 
-    // ── Online path (unchanged) ────────────────────────────────────────────────
+    // ── Online path ────────────────────────────────────────────────────────────
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
       Alert.alert('Not signed in', 'Please sign in to submit.')
@@ -108,27 +108,30 @@ export default function CaptureScreen() {
     }
 
     try {
-      // Convert URI to blob
-      const response = await fetch(capturedUri)
-      const blob = await response.blob()
-      const ext = 'jpg'
-      const fileName = `${user.id}/${task.id}/${Date.now()}.${ext}`
+      const timestamp = Date.now()
+      const photoUrls: string[] = []
 
-      // Upload to Supabase Storage
-      const { error: uploadError } = await supabase.storage
-        .from('submissions')
-        .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false })
+      // Upload each photo
+      for (let i = 0; i < photos.length; i++) {
+        const uri = photos[i]
+        const response = await fetch(uri)
+        const blob = await response.blob()
+        const fileName = `${user.id}/${task.id}/${timestamp}_${i}.jpg`
 
-      if (uploadError) throw uploadError
+        const { error: uploadErr } = await supabase.storage
+          .from('submissions')
+          .upload(fileName, blob, { contentType: 'image/jpeg', upsert: false })
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from('submissions')
-        .getPublicUrl(fileName)
+        if (uploadErr) throw uploadErr
 
-      const photoUrl = urlData.publicUrl
+        const { data: urlData } = supabase.storage
+          .from('submissions')
+          .getPublicUrl(fileName)
 
-      // Create submission row
+        photoUrls.push(urlData.publicUrl)
+      }
+
+      // Create single submission row with all photo URLs
       const { data: submissionData, error: submissionError } = await supabase
         .from('submissions')
         .insert({
@@ -136,9 +139,15 @@ export default function CaptureScreen() {
           collector_id: user.id,
           campaign_id: task.campaign_id,
           store_id: task.store_id,
-          photo_urls: [photoUrl],
+          photo_urls: photoUrls,
           status: 'pending_review',
           submitted_at: new Date().toISOString(),
+          location_verified: locationVerified === 'true',
+          metadata: {
+            location_verified: locationVerified === 'true',
+            captured_at: new Date().toISOString(),
+            platform: Platform.OS,
+          },
         })
         .select('id')
         .single()
@@ -153,7 +162,6 @@ export default function CaptureScreen() {
 
       if (taskError) throw taskError
 
-      // Navigate to success — pass payout + submissionId
       router.replace({
         pathname: '/capture/success',
         params: {
@@ -161,6 +169,7 @@ export default function CaptureScreen() {
           taskId: task.id,
           submissionId: submissionData?.id ?? '',
           mode: 'online',
+          count: String(photos.length),
         },
       })
     } catch (err) {
@@ -195,50 +204,7 @@ export default function CaptureScreen() {
 
   const storeName = task?.stores?.name ?? 'Store'
 
-  // Preview mode after capture
-  if (capturedUri) {
-    return (
-      <View style={s.container}>
-        <Image source={{ uri: capturedUri }} style={s.preview} resizeMode="cover" />
-
-        {/* Overlay store name */}
-        <View style={s.previewOverlay}>
-          <Text style={s.overlayStoreName} numberOfLines={1}>{storeName}</Text>
-          <Text style={s.overlayLabel}>Review your photo</Text>
-        </View>
-
-        {/* Error message */}
-        {uploadError && (
-          <View style={s.errorBanner}>
-            <Text style={s.errorText}>{uploadError}</Text>
-          </View>
-        )}
-
-        {/* Action buttons */}
-        <View style={s.previewActions}>
-          <TouchableOpacity style={s.retakeBtn} onPress={handleRetake} disabled={uploading}>
-            <Text style={s.retakeBtnText}>Retake</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[s.usePhotoBtn, uploading && s.btnDisabled]}
-            onPress={handleUsePhoto}
-            disabled={uploading}
-          >
-            {uploading ? (
-              <View style={s.uploadingRow}>
-                <ActivityIndicator color="#030305" size="small" />
-                <Text style={s.uploadingText}>Uploading...</Text>
-              </View>
-            ) : (
-              <Text style={s.usePhotoBtnText}>Use Photo</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-    )
-  }
-
-  // Camera mode
+  // Camera mode (always shown; photo strip overlays bottom)
   return (
     <View style={s.container}>
       <CameraView ref={cameraRef} style={s.camera} facing={facing}>
@@ -268,12 +234,66 @@ export default function CaptureScreen() {
           </View>
         </View>
 
-        {/* Capture button */}
-        <View style={s.cameraOverlayBottom}>
-          <TouchableOpacity style={s.captureRing} onPress={handleCapture} activeOpacity={0.8}>
-            <View style={s.captureInner} />
+        {/* Error message */}
+        {uploadError && (
+          <View style={s.errorBanner}>
+            <Text style={s.errorText}>{uploadError}</Text>
+          </View>
+        )}
+
+        {/* Photo strip */}
+        {photos.length > 0 && (
+          <View style={{
+            position: 'absolute', bottom: 100, left: 0, right: 0,
+            flexDirection: 'row', paddingHorizontal: 16, gap: 8, alignItems: 'center'
+          }}>
+            {photos.map((uri, i) => (
+              <View key={i} style={{ position: 'relative' }}>
+                <Image source={{ uri }} style={{ width: 56, height: 56, borderRadius: 6, borderWidth: 2, borderColor: '#7c6df5' }} />
+                <TouchableOpacity
+                  onPress={() => setPhotos(p => p.filter((_, j) => j !== i))}
+                  style={{ position: 'absolute', top: -6, right: -6, backgroundColor: '#ff4d6d', borderRadius: 10, width: 18, height: 18, alignItems: 'center', justifyContent: 'center' }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+            {photos.length < MAX_PHOTOS && (
+              <TouchableOpacity
+                onPress={takePicture}
+                style={{ width: 56, height: 56, borderRadius: 6, borderWidth: 2, borderColor: '#222240', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ color: '#b0b0d0', fontSize: 24 }}>+</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {/* Submit button */}
+        {photos.length > 0 && (
+          <TouchableOpacity
+            onPress={handleSubmit}
+            disabled={uploading}
+            style={{
+              position: 'absolute', bottom: 32, left: 32, right: 32,
+              backgroundColor: '#7c6df5', borderRadius: 12, paddingVertical: 16,
+              alignItems: 'center', opacity: uploading ? 0.6 : 1
+            }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700' }}>
+              {uploading ? 'Uploading...' : `Submit ${photos.length} Photo${photos.length > 1 ? 's' : ''}`}
+            </Text>
           </TouchableOpacity>
-        </View>
+        )}
+
+        {/* Capture button — only shown when no photos yet, or strip has room */}
+        {photos.length === 0 && (
+          <View style={s.cameraOverlayBottom}>
+            <TouchableOpacity style={s.captureRing} onPress={takePicture} activeOpacity={0.8}>
+              <View style={s.captureInner} />
+            </TouchableOpacity>
+          </View>
+        )}
       </CameraView>
     </View>
   )
@@ -306,7 +326,6 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   overlayHint: { fontSize: 13, color: 'rgba(255,255,255,0.7)' },
-  overlayLabel: { fontSize: 14, color: 'rgba(255,255,255,0.7)', marginTop: 4 },
 
   // Frame guide
   frameGuideContainer: {
@@ -375,21 +394,9 @@ const s = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
 
-  // Preview
-  preview: { flex: 1 },
-  previewOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    backgroundColor: 'rgba(3,3,5,0.65)',
-  },
   errorBanner: {
     position: 'absolute',
-    bottom: 140,
+    bottom: 175,
     left: 20,
     right: 20,
     backgroundColor: 'rgba(255,77,109,0.15)',
@@ -405,38 +412,4 @@ const s = StyleSheet.create({
     fontWeight: '600',
     color: '#ff4d6d',
   },
-  previewActions: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    gap: 12,
-    padding: 20,
-    paddingBottom: 48,
-    backgroundColor: 'rgba(3,3,5,0.6)',
-  },
-  retakeBtn: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  retakeBtnText: { fontSize: 16, fontWeight: '700', color: '#ffffff' },
-  usePhotoBtn: {
-    flex: 2,
-    backgroundColor: '#7c6df5',
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 56,
-  },
-  usePhotoBtnText: { fontSize: 16, fontWeight: '800', color: '#030305' },
-  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  uploadingText: { fontSize: 15, fontWeight: '700', color: '#030305' },
-  btnDisabled: { opacity: 0.6 },
 })
