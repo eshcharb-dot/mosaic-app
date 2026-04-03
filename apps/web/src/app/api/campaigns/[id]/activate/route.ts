@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { logAudit } from '@/lib/audit'
 
 const PLAN_SUBMISSION_LIMITS: Record<string, number> = {
   starter: 50,
@@ -88,6 +89,16 @@ export async function POST(request: NextRequest, context: RouteContext) {
       { status: 500 }
     )
   }
+
+  logAudit({
+    orgId: profile.organization_id,
+    userId: user.id,
+    action: 'campaign.activated',
+    resourceType: 'campaign',
+    resourceId: campaignId,
+    metadata: { tasks_created: tasksCreated, plan },
+    request,
+  })
 
   return NextResponse.json({ success: true, tasks_created: tasksCreated })
 }

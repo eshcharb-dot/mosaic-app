@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { validateEmail, validationError } from '@/lib/validate'
+import { logAudit } from '@/lib/audit'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -31,16 +33,20 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { email, role } = body
 
-  // Validate email
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!email || !emailRegex.test(email)) {
-    return NextResponse.json({ error: 'Invalid email address' }, { status: 400 })
+  // Validate
+  const errors: Record<string, string> = {}
+
+  if (!email || !validateEmail(String(email))) {
+    errors.email = 'Invalid email address'
   }
 
-  // Validate role
   const validRoles = ['enterprise_admin', 'analyst', 'viewer']
   if (!role || !validRoles.includes(role)) {
-    return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+    errors.role = `Invalid role. Must be one of: ${validRoles.join(', ')}`
+  }
+
+  if (Object.keys(errors).length > 0) {
+    return NextResponse.json(validationError(errors), { status: 422 })
   }
 
   const orgId = callerProfile.organization_id
@@ -74,6 +80,16 @@ export async function POST(request: NextRequest) {
     console.error('[team/invite] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to create invitation', detail: insertError.message }, { status: 500 })
   }
+
+  logAudit({
+    orgId,
+    userId: user.id,
+    action: 'user.invited',
+    resourceType: 'invitation',
+    resourceId: invitation.id,
+    metadata: { invited_email: email.toLowerCase(), role },
+    request,
+  })
 
   return NextResponse.json({ invitation }, { status: 201 })
 }

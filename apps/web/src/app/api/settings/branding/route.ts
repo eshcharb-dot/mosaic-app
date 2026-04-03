@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-
-const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
-
-function isValidHex(value: unknown): value is string {
-  return typeof value === 'string' && HEX_RE.test(value)
-}
+import { validateHexColor, validateUrl, sanitizeText, validationError } from '@/lib/validate'
+import { logAudit } from '@/lib/audit'
 
 export async function PATCH(request: NextRequest) {
   const supabase = await createClient()
@@ -39,37 +35,57 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  // 4. Build validated update payload
+  // 4. Validate and build update payload
+  const fieldErrors: Record<string, string> = {}
   const updates: Record<string, string | null> = {}
 
   if ('primaryColor' in body) {
-    if (!isValidHex(body.primaryColor)) {
-      return NextResponse.json({ error: 'primaryColor must be a valid hex color (e.g. #7c6df5)' }, { status: 400 })
+    if (!validateHexColor(String(body.primaryColor ?? ''))) {
+      fieldErrors.primaryColor = 'Must be a valid hex color (e.g. #7c6df5)'
+    } else {
+      updates.brand_primary_color = body.primaryColor as string
     }
-    updates.brand_primary_color = body.primaryColor as string
   }
 
   if ('secondaryColor' in body) {
-    if (!isValidHex(body.secondaryColor)) {
-      return NextResponse.json({ error: 'secondaryColor must be a valid hex color (e.g. #00d4d4)' }, { status: 400 })
+    if (!validateHexColor(String(body.secondaryColor ?? ''))) {
+      fieldErrors.secondaryColor = 'Must be a valid hex color (e.g. #00d4d4)'
+    } else {
+      updates.brand_secondary_color = body.secondaryColor as string
     }
-    updates.brand_secondary_color = body.secondaryColor as string
   }
 
   if ('portalName' in body) {
-    const name = body.portalName
-    if (typeof name !== 'string' || name.trim().length === 0 || name.length > 60) {
-      return NextResponse.json({ error: 'portalName must be a non-empty string (max 60 chars)' }, { status: 400 })
+    const raw = String(body.portalName ?? '').trim()
+    if (raw.length === 0 || raw.length > 60) {
+      fieldErrors.portalName = 'Must be a non-empty string (max 60 chars)'
+    } else {
+      updates.brand_portal_name = sanitizeText(raw, 60)
     }
-    updates.brand_portal_name = name.trim()
   }
 
   if ('logoUrl' in body) {
-    updates.brand_logo_url = typeof body.logoUrl === 'string' ? body.logoUrl : null
+    if (body.logoUrl === null || body.logoUrl === '') {
+      updates.brand_logo_url = null
+    } else if (!validateUrl(String(body.logoUrl))) {
+      fieldErrors.logoUrl = 'Must be a valid https:// URL'
+    } else {
+      updates.brand_logo_url = String(body.logoUrl)
+    }
   }
 
   if ('faviconUrl' in body) {
-    updates.brand_favicon_url = typeof body.faviconUrl === 'string' ? body.faviconUrl : null
+    if (body.faviconUrl === null || body.faviconUrl === '') {
+      updates.brand_favicon_url = null
+    } else if (!validateUrl(String(body.faviconUrl))) {
+      fieldErrors.faviconUrl = 'Must be a valid https:// URL'
+    } else {
+      updates.brand_favicon_url = String(body.faviconUrl)
+    }
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return NextResponse.json(validationError(fieldErrors), { status: 422 })
   }
 
   if (Object.keys(updates).length === 0) {
@@ -88,6 +104,16 @@ export async function PATCH(request: NextRequest) {
     console.error('[branding PATCH] update error:', updateError)
     return NextResponse.json({ error: 'Failed to update branding', detail: updateError.message }, { status: 500 })
   }
+
+  logAudit({
+    orgId: profile.organization_id,
+    userId: user.id,
+    action: 'org.branding_updated',
+    resourceType: 'organization',
+    resourceId: profile.organization_id,
+    metadata: { fields: Object.keys(updates) },
+    request,
+  })
 
   return NextResponse.json({ success: true, org })
 }

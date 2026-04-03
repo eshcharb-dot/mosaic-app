@@ -1,6 +1,6 @@
 'use client'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound, CreditCard } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Image, Bell, LogOut, Zap, Settings, LayoutTemplate, BarChart2, Users, Store, Webhook, Palette, Mail, TrendingUp, KeyRound, CreditCard, FolderDown } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
@@ -23,6 +23,7 @@ const nav = [
   { href: '/gallery', label: 'Gallery', icon: Image, badge: null },
   { href: '/alerts', label: 'Alerts', icon: Bell, badge: 3 },
   { href: '/reports', label: 'Reports', icon: BarChart2, badge: null },
+  { href: '/exports', label: 'Exports', icon: FolderDown, badge: null },
   { href: '/collectors', label: 'Collectors', icon: Users, badge: null },
 ]
 

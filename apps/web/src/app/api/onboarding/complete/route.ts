@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { validateEmail, sanitizeText, validationError } from '@/lib/validate'
 
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
@@ -14,17 +15,42 @@ export async function POST(request: NextRequest) {
   const body = await request.json()
   const { orgName, industry, country, campaignName, brief, payoutAmount, inviteEmails } = body
 
-  if (!orgName?.trim() || !campaignName?.trim() || !brief?.trim()) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  // 3. Validate
+  const fieldErrors: Record<string, string> = {}
+
+  const sanitizedOrgName = orgName ? sanitizeText(String(orgName), 100) : ''
+  if (!sanitizedOrgName) fieldErrors.orgName = 'Organization name is required'
+
+  const sanitizedCampaignName = campaignName ? sanitizeText(String(campaignName), 100) : ''
+  if (!sanitizedCampaignName) fieldErrors.campaignName = 'Campaign name is required'
+
+  const sanitizedBrief = brief ? sanitizeText(String(brief), 2000) : ''
+  if (!sanitizedBrief) fieldErrors.brief = 'Brief is required'
+
+  // Validate invite emails if provided
+  const invalidEmails: string[] = []
+  if (Array.isArray(inviteEmails)) {
+    for (const e of inviteEmails) {
+      if (typeof e === 'string' && e.trim() && !validateEmail(e)) {
+        invalidEmails.push(e)
+      }
+    }
+    if (invalidEmails.length > 0) {
+      fieldErrors.inviteEmails = `Invalid email addresses: ${invalidEmails.join(', ')}`
+    }
   }
 
-  const slug = orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  if (Object.keys(fieldErrors).length > 0) {
+    return NextResponse.json(validationError(fieldErrors), { status: 422 })
+  }
 
-  // 3. Create organization
+  const slug = sanitizedOrgName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+  // 4. Create organization
   const { data: org, error: orgError } = await supabase
     .from('organizations')
     .insert({
-      name: orgName.trim(),
+      name: sanitizedOrgName,
       slug,
       industry: industry ?? 'other',
       plan: 'starter',
@@ -41,7 +67,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // 4. Update user profile with org_id and role
+  // 5. Update user profile with org_id and role
   const { error: profileError } = await supabase
     .from('profiles')
     .update({ organization_id: org.id, role: 'enterprise_admin' })
@@ -55,18 +81,18 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // 5. Create first campaign
+  // 6. Create first campaign
   const payoutCents = Math.round((Number(payoutAmount) || 12) * 100)
   const { data: campaign, error: campaignError } = await supabase
     .from('campaigns')
     .insert({
       organization_id: org.id,
       created_by: user.id,
-      name: campaignName.trim(),
-      brief: brief.trim(),
+      name: sanitizedCampaignName,
+      brief: sanitizedBrief,
       price_per_task_cents: payoutCents,
       collector_payout_cents: Math.round(payoutCents * 0.48),
-      product_name: campaignName.trim(),
+      product_name: sanitizedCampaignName,
       product_sku: '',
       status: 'draft',
     })
@@ -81,7 +107,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // 6. Log invite emails (MVP — no actual sending)
+  // 7. Log invite emails (MVP — no actual sending)
   if (Array.isArray(inviteEmails) && inviteEmails.length > 0) {
     console.log('[onboarding] invite emails queued for org', org.id, ':', inviteEmails)
   }

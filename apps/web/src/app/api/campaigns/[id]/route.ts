@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { sanitizeText, validationError } from '@/lib/validate'
 
 interface RouteContext {
   params: Promise<{ id: string }>
@@ -46,14 +47,31 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const body = await request.json()
   const { name, brief, payout_amount, status } = body
 
+  const fieldErrors: Record<string, string> = {}
+
   const allowedStatuses = ['draft', 'active', 'paused', 'completed']
   if (status !== undefined && !allowedStatuses.includes(status)) {
-    return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
+    fieldErrors.status = `Must be one of: ${allowedStatuses.join(', ')}`
+  }
+
+  let sanitizedName: string | undefined
+  if (name !== undefined) {
+    sanitizedName = sanitizeText(String(name), 100)
+    if (sanitizedName.length === 0) fieldErrors.name = 'name cannot be empty'
+  }
+
+  let sanitizedBrief: string | null | undefined
+  if (brief !== undefined) {
+    sanitizedBrief = brief === '' ? null : sanitizeText(String(brief), 2000)
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return NextResponse.json(validationError(fieldErrors), { status: 422 })
   }
 
   const updates: Record<string, unknown> = {}
-  if (name !== undefined) updates.name = String(name).trim()
-  if (brief !== undefined) updates.brief = brief === '' ? null : String(brief).trim()
+  if (sanitizedName !== undefined) updates.name = sanitizedName
+  if (sanitizedBrief !== undefined) updates.brief = sanitizedBrief
   if (payout_amount !== undefined) updates.payout_amount = Number(payout_amount)
   if (status !== undefined) updates.status = status
 

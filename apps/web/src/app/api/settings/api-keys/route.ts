@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createHash } from 'crypto'
+import { logAudit } from '@/lib/audit'
 
 function generateApiKey(): { key: string; hash: string; prefix: string } {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -99,6 +100,16 @@ export async function POST(request: NextRequest) {
     console.error('[api-keys POST] insert error:', insertError)
     return NextResponse.json({ error: 'Failed to create API key' }, { status: 500 })
   }
+
+  logAudit({
+    orgId: profile.organization_id,
+    userId: user.id,
+    action: 'api_key.created',
+    resourceType: 'api_key',
+    resourceId: newKey.id,
+    metadata: { name, scopes, prefix },
+    request,
+  })
 
   // Return full key only once — never stored
   return NextResponse.json({ key: newKey, full_key: key }, { status: 201 })
