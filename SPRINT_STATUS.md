@@ -1,8 +1,8 @@
 # Mosaic Sprint Status
 
-Last updated: 2026-04-02
+Last updated: 2026-04-03
 
-## Current Sprint: Sprint 5 (v1.0-RC) — DONE
+## Current Sprint: Sprint 55 (v2.0) — DONE
 
 All sprints complete. App is production-ready.
 
@@ -148,3 +148,73 @@ supabase/migrations/
   002_campaign_activation.sql — activate_campaign + get_campaign_stats
   003_seed_data.sql           — Meridian Foods seed
 ```
+
+---
+
+## Completed Sprints (v1.1–v2.0)
+
+### Sprints 6-10 — DONE — commit 159d52c
+- Supabase Realtime subscriptions (useRealtimeTable hook)
+- Enterprise onboarding wizard (multi-step, org setup)
+- Mobile map (SVG, haversine distance, 6km viewport)
+
+### Sprints 11-15 — DONE — commit aae7dd3
+- Team management (invitations with crypto tokens)
+- Push notifications (expo-notifications, lazy-loaded)
+- Campaign templates table + API
+
+### Sprints 16-20 — DONE — commit 512b3e5
+- Webhooks system (HMAC-SHA256, deliver-webhook edge function)
+- Global command palette (⌘K, debounced search)
+- Mobile offline queue + connectivity hook + sync manager
+
+### Sprints 21-25 — DONE — commit c826c15
+- White-label branding (CSS vars, BrandProvider, custom domain)
+- Compliance rules engine (campaign rules builder)
+- Collector tier system (bronze/silver/gold/platinum, auto-promote trigger)
+
+### Sprints 26-30 — DONE — commit 1a2d8d4
+- AI digest emails (GPT-4o narrative, styled HTML)
+- Public ROI calculator marketing page
+- Territory management (store territory assignment + map)
+
+### Sprints 31-35 — DONE — commit 21c4ca1
+- Interactive map filters (heatmap/territory modes, score/campaign filters)
+- Photo comparison slider (drag-to-reveal, keyboard support)
+- Admin dashboard (platform-wide stats, org/collector management, audit log)
+- Export center (CSV/PDF with date/campaign filters)
+- Security hardening (rate limiting, security headers, input validation, audit logging)
+
+### Sprints 36-38 — DONE — commit 557443f
+- i18n: English / German / French (JSON files, I18nProvider, language selector)
+- Accessibility: WCAG 2.1 AA (focus rings, skip links, ARIA, focus traps)
+- Dark/light theme toggle (CSS vars, ThemeProvider, zero-flash inline script)
+
+### Sprints 39-41 — DONE — commit bcd131a
+- Performance monitoring dashboard (system health, 8 metrics, 30s auto-refresh)
+- Mobile tablet layout optimization (2-column grid, side panel, responsive hooks)
+- Mobile dark/light theme (ThemeContext, AsyncStorage persistence, token system)
+
+### Sprints 42-44 — DONE — commit a4e5d26
+- Batch photo capture (up to 5 photos per submission, preview strip)
+- GPS location verification (Haversine distance check, 200m threshold)
+- Slack alert integration (webhook, threshold config, test message)
+
+### Sprints 45-47 — DONE — commit fd0c58e
+- Email notification system (Resend integration, digest preferences, email log)
+- Public marketing landing page (hero, stats bar, features grid, CTA)
+- Enterprise onboarding wizard (4-step, org setup, first campaign creation)
+
+### Sprints 48-50 — DONE — commit 784e480
+- Help center (searchable, 8 articles, category filter)
+- Mobile task search + filters (Near Me, High Pay, Quick Tasks, empty states)
+- Campaign templates gallery (6 pre-built templates, detail panel, one-click create)
+
+### Sprints 51-53 — DONE — commit f01f494
+- Store management page (bulk edit/delete, CSV import/export)
+- Mobile achievement badges (12 badges, tier system, DB migration)
+- Collector management page (org-scoped, stats, side panel)
+
+### Sprints 54-55 — DONE
+- Mobile task history screen (completed tasks, earnings, scores, filters)
+- Error boundaries + loading states + final polish

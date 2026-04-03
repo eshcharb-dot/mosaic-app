@@ -15,6 +15,38 @@ Real-time shelf compliance. Verified by humans. Powered by AI.
 | AI | OpenAI GPT-4o Vision (Supabase Edge Function) |
 | Payments | Stripe Connect |
 
+## Features
+
+### Enterprise Portal (Next.js)
+- Real-time compliance dashboard with SVG store map
+- Campaign management with bulk store upload
+- AI-powered photo gallery with comparison slider
+- Advanced analytics (compliance trends, store rankings, tier distribution)
+- Team management with email invitations
+- White-label branding with custom CSS vars
+- Webhook system with HMAC-SHA256 signatures
+- Public REST API with API key authentication
+- Slack & email notification integrations
+- Campaign templates gallery
+- Store and collector management
+- Performance monitoring dashboard
+- Help center with searchable articles
+- Dark/light theme + EN/DE/FR i18n
+- WCAG 2.1 AA accessibility
+
+### Mobile App (Expo)
+- Task discovery map with 6km viewport
+- Batch photo capture (up to 5 photos)
+- GPS location verification
+- Offline queue with background sync
+- Collector earnings & payout dashboard
+- Stripe Connect integration
+- Achievement badge system
+- Leaderboard & referral system
+- Push notifications
+- Dark/light theme
+- Tablet-responsive layouts
+
 ## Project Structure
 
 ```
